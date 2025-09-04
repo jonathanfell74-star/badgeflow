@@ -1,3 +1,4 @@
+import "./globals.css";
 export const metadata = {
   title: "BadgeFlow — Staff ID cards",
   description: "BadgeFlow minimal starter"
