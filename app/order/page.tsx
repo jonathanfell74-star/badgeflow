@@ -4,6 +4,10 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { priceForQuantity } from "../../lib/pricing";
 
+// Make sure this route never gets statically cached
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function OrderPage() {
   const params = useSearchParams();
   const success = params.get("success") === "1";
@@ -39,9 +43,13 @@ export default function OrderPage() {
 
   return (
     <div>
+      {/* DEBUG: remove later. Confirms you’re on the new build. */}
+      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
+        v2 · success={String(success)} · session_id={sessionId || "(none)"}
+      </div>
+
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 12 }}>Start an order</h1>
 
-      {/* If NOT success, show the normal order form */}
       {!success && (
         <form onSubmit={onCheckout} style={{ display: "grid", gap: 16, maxWidth: 520 }}>
           <label>Quantity
@@ -77,7 +85,6 @@ export default function OrderPage() {
         </form>
       )}
 
-      {/* If success + session_id present, show the upload form */}
       {success && sessionId && (
         <div style={{ marginTop: 24 }}>
           <div style={{ background: "#ecfdf5", border: "1px solid #10b981", padding: 12, borderRadius: 8, marginBottom: 12 }}>
@@ -108,6 +115,12 @@ export default function OrderPage() {
             </button>
           </form>
         </div>
+      )}
+
+      {success && !sessionId && (
+        <p style={{ color: "#b45309", marginTop: 16 }}>
+          Payment confirmed but missing session_id. Please open the success link that includes the session id.
+        </p>
       )}
     </div>
   );
