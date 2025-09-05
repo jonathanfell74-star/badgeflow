@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
-// go up 3 levels to reach root/lib
-import { priceForQuantity } from "../../../lib/pricing";
-import { computeCutoff } from "../../../lib/cutoff";
+import { priceForQuantity } from "../../../../lib/pricing";
+import { computeCutoff } from "../../../../lib/cutoff";
+
 
 
 
