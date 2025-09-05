@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { priceForQuantity } from "../../../lib/pricing";   // root/lib (correct)
-import { computeCutoff } from "../../lib/cutoff";          // app/lib (fixed)
+
+// go up 3 levels to reach root/lib
+import { priceForQuantity } from "../../../lib/pricing";
+import { computeCutoff } from "../../../lib/cutoff";
+
 
 
 export async function POST(req: Request) {
