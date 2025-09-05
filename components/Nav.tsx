@@ -19,6 +19,7 @@ export default function Nav() {
         <nav style={{ display: "flex", gap: 16 }}>
           <Link href="/pricing">Pricing</Link>
           <Link href="/order">Start an order</Link>
+          <Link href="/dashboard">Dashboard</Link>
         </nav>
       </div>
     </header>
