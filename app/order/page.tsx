@@ -4,9 +4,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { priceForQuantity } from "../../lib/pricing";
 
-// Make sure this route never gets statically cached
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+
 
 export default function OrderPage() {
   const params = useSearchParams();
