@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   };
 
   let logo_path: string | null = null;
-  let roster_path: string | undefinied;
+  let roster_path: string | undefined;
 
   try {
     // Upload logo/roster if provided
