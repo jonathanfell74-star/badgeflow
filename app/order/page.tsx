@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { priceForQuantity } from "../../lib/pricing";
 
-
-
-export default function OrderPage() {
+// Child component that actually uses useSearchParams()
+function OrderClient() {
   const params = useSearchParams();
   const success = params.get("success") === "1";
   const sessionId = params.get("session_id") || "";
@@ -21,7 +20,7 @@ export default function OrderPage() {
     const res = await fetch("/api/stripe/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quantity: qty, wallet })
+      body: JSON.stringify({ quantity: qty, wallet }),
     });
     const json = await res.json();
     if (!res.ok) return alert(json.error || "Failed to start checkout");
@@ -41,9 +40,9 @@ export default function OrderPage() {
 
   return (
     <div>
-      {/* DEBUG: remove later. Confirms you’re on the new build. */}
+      {/* small debug line to confirm build */}
       <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
-        v2 · success={String(success)} · session_id={sessionId || "(none)"}
+        v3 · success={String(success)} · session_id={sessionId || "(none)"}
       </div>
 
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 12 }}>Start an order</h1>
@@ -121,5 +120,14 @@ export default function OrderPage() {
         </p>
       )}
     </div>
+  );
+}
+
+// Page component wrapped in Suspense
+export default function Page() {
+  return (
+    <Suspense fallback={<div style={{ color: "#64748b" }}>Loading…</div>}>
+      <OrderClient />
+    </Suspense>
   );
 }
