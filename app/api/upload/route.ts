@@ -10,6 +10,13 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE!
 );
 
+async function readTextFromStorage(path: string) {
+  const { data, error } = await supabaseAdmin.storage.from(BUCKET).download(path);
+  if (error) throw error;
+  const buf = Buffer.from(await data.arrayBuffer());
+  return buf.toString("utf-8");
+}
+
 export async function POST(req: NextRequest) {
   const form = await req.formData();
 
@@ -25,14 +32,9 @@ export async function POST(req: NextRequest) {
 
   const logo = form.get("logo") as File | null;
   const roster = form.get("roster") as File | null;
-
-  // Accept multiple files named "photos"
   const photos = form.getAll("photos") as File[]; // can be empty
 
-  let logo_path: string | null = null;
-  let roster_path: string | null = null;
-
-  async function uploadFile(file: File, key: string) {
+  const uploadFile = async (file: File, key: string) => {
     const buf = Buffer.from(await file.arrayBuffer());
     const { error } = await supabaseAdmin.storage
       .from(BUCKET)
@@ -41,10 +43,13 @@ export async function POST(req: NextRequest) {
         upsert: true,
       });
     if (error) throw error;
-  }
+  };
 
-  // --- Upload files
+  let logo_path: string | null = null;
+  let roster_path: string | null = null;
+
   try {
+    // Upload logo/roster if provided
     if (logo) {
       logo_path = `${sessionId}/logo-${Date.now()}-${logo.name}`;
       await uploadFile(logo, logo_path);
@@ -54,77 +59,108 @@ export async function POST(req: NextRequest) {
       await uploadFile(roster, roster_path);
     }
 
-    // Upload each photo into photos/ subfolder
-    const uploadedPhotoNames: string[] = [];
+    // Upload photos (if any)
     for (const photo of photos) {
-      if (!photo || !photo.name) continue;
-      const key = `${sessionId}/photos/${photo.name}`;
-      await uploadFile(photo, key);
-      uploadedPhotoNames.push(photo.name);
+      if (!photo?.name) continue;
+      await uploadFile(photo, `${sessionId}/photos/${photo.name}`);
     }
 
-    // --- Validate roster vs photo filenames (simple CSV parser)
+    // -----------------------------------------
+    // Build validation picture (all photos + the latest roster)
+    // -----------------------------------------
+    // Get existing order (for existing roster_path if not provided)
+    const { data: existing, error: selErr } = await supabaseAdmin
+      .from("orders")
+      .select("roster_path")
+      .eq("stripe_session_id", sessionId)
+      .maybeSingle();
+
+    if (selErr) throw selErr;
+
+    // Determine which roster text to use:
+    // 1) the new one just uploaded, else
+    // 2) the previously saved one (if any)
+    let rosterText: string | null = null;
+    if (roster) {
+      const buf = Buffer.from(await roster.arrayBuffer());
+      rosterText = buf.toString("utf-8");
+      roster_path = roster_path!; // set above
+    } else if (existing?.roster_path) {
+      roster_path = existing.roster_path;
+      rosterText = await readTextFromStorage(roster_path);
+    }
+
+    // List ALL current photo filenames for this session
+    const { data: list, error: listErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .list(`${sessionId}/photos`, { limit: 1000 });
+    if (listErr) throw listErr;
+
+    const allPhotoNames = (list || []).map((f) => f.name.toLowerCase());
+
+    // Validate roster vs photos (simple CSV)
     let rosterRows = 0;
     let matched = 0;
     let missing = 0;
     let missingList: string[] = [];
 
-    if (roster) {
-      const text = Buffer.from(await roster.arrayBuffer()).toString("utf-8");
-      const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (rosterText) {
+      const lines = rosterText.split(/\r?\n/).filter((l) => l.trim().length > 0);
       if (lines.length > 0) {
-        const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+        const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
         const photoIdx = headers.indexOf("photo_filename");
         if (photoIdx === -1) {
-          return NextResponse.json({
-            error:
-              `The roster is missing a "photo_filename" column. ` +
-              `Please add it (e.g. E1234.jpg) and re-upload.`,
-          }, { status: 400 });
+          return NextResponse.json(
+            {
+              error:
+                'The roster is missing a "photo_filename" column. Please add it and re-upload.',
+            },
+            { status: 400 }
+          );
         }
-        const set = new Set(uploadedPhotoNames.map(n => n.toLowerCase()));
+        const set = new Set(allPhotoNames);
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].split(",");
-          if (cols.length !== headers.length) continue; // skip malformed rows
+          if (cols.length < headers.length) continue;
           const fname = (cols[photoIdx] || "").trim().toLowerCase();
           if (!fname) continue;
           rosterRows++;
           if (set.has(fname)) matched++;
-          else { missing++; missingList.push(fname); }
+          else {
+            missing++;
+            missingList.push(fname);
+          }
         }
       }
     }
 
-    // Save metadata & validation counts
-    const { error: dbErr } = await supabaseAdmin
+    // Save metadata & counts
+    const { error: updErr } = await supabaseAdmin
       .from("orders")
       .update({
-        logo_path,
-        roster_path,
+        logo_path: logo_path ?? undefined,
+        roster_path: roster_path ?? undefined,
         company,
         contact_email,
         shipping_address,
         notes,
-        photo_count: uploadedPhotoNames.length,
+        photo_count: allPhotoNames.length,
         roster_rows: rosterRows,
         photo_matched: matched,
-        photo_missing: missing
+        photo_missing: missing,
       })
       .eq("stripe_session_id", sessionId);
-
-    if (dbErr) {
-      return NextResponse.json({ error: dbErr.message }, { status: 500 });
-    }
+    if (updErr) throw updErr;
 
     return NextResponse.json({
       ok: true,
       summary: {
-        uploaded_photos: uploadedPhotoNames.length,
+        uploaded_photos: allPhotoNames.length,
         roster_rows: rosterRows,
         matched,
         missing,
-        missing_list: missingList
-      }
+        missing_list: missingList,
+      },
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Upload failed" }, { status: 500 });
