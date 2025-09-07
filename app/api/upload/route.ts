@@ -86,8 +86,9 @@ export async function POST(req: NextRequest) {
       rosterText = buf.toString("utf-8");
       roster_path = roster_path!; // set above
     } else if (existing?.roster_path) {
-      roster_path = existing.roster_path;
-      rosterText = await readTextFromStorage(roster_path);
+      const rp = existing.roster_path as string;
+      roster_path = rp;
+      rosterText = await readTextFromStorage(rp);
     }
 
     // List ALL current photo filenames for this session
