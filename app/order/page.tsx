@@ -4,7 +4,7 @@ import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { priceForQuantity } from "../../lib/pricing";
 
-// --- Client component that uses useSearchParams inside a Suspense boundary
+// --- Client component that reads the query string and handles the forms
 function OrderClient() {
   const params = useSearchParams();
   const success = params.get("success") === "1";
@@ -17,6 +17,7 @@ function OrderClient() {
   const prices = useMemo(() => priceForQuantity(qty), [qty]);
   const total = qty * prices.cardUnit + (wallet ? qty * prices.walletUnit : 0);
 
+  // Start Stripe Checkout
   async function onCheckout(e: React.FormEvent) {
     e.preventDefault();
     const res = await fetch("/api/stripe/checkout", {
@@ -32,6 +33,7 @@ function OrderClient() {
     window.location.href = json.url;
   }
 
+  // Upload logo + roster + many photos, then show validation summary
   async function onUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
@@ -78,6 +80,7 @@ function OrderClient() {
         </div>
       )}
 
+      {/* BEFORE PAYMENT: quantity + wallet add-on */}
       {!success && (
         <form onSubmit={onCheckout} style={{ display: "grid", gap: 16, maxWidth: 520 }}>
           <label>
@@ -134,6 +137,7 @@ function OrderClient() {
         </form>
       )}
 
+      {/* AFTER PAYMENT: show upload panel when we have success + session_id */}
       {success && sessionId && (
         <div style={{ marginTop: 24 }}>
           <div style={{ background: "#ecfdf5", border: "1px solid #10b981", padding: 12, borderRadius: 8, marginBottom: 12 }}>
@@ -207,6 +211,11 @@ function OrderClient() {
             >
               Upload files
             </button>
+
+            <p style={{ color: "#64748b", fontSize: 13, marginTop: 8 }}>
+              Tip: in your roster, add a column <code>photo_filename</code> and ensure each value matches exactly the
+              corresponding image filename you upload (e.g. <code>E1234.jpg</code>).
+            </p>
           </form>
         </div>
       )}
@@ -220,7 +229,7 @@ function OrderClient() {
   );
 }
 
-// --- Page wrapped in Suspense, required when using useSearchParams
+// --- Page wrapped in Suspense (required when using useSearchParams)
 export default function Page() {
   return (
     <Suspense fallback={<div style={{ color: "#64748b" }}>Loading…</div>}>
