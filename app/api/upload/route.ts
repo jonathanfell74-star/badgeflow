@@ -1,3 +1,5 @@
+export const runtime = 'nodejs';
+
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
@@ -6,6 +8,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE!
 );
+
 
 function readSheetToRows(buf: ArrayBuffer) {
   const wb = XLSX.read(buf, { type: 'array' });
