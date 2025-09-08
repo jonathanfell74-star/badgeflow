@@ -7,7 +7,6 @@ import { createClient } from "@supabase/supabase-js";
 import { priceForQuantity } from "@/lib/pricing";
 
 // Use the API version supported by your installed Stripe SDK.
-// (Your build log shows it expects "2023-10-16".)
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
   apiVersion: "2023-10-16",
 });
@@ -45,8 +44,9 @@ export async function POST(req: Request) {
     }
 
     // Get unit pricing (in pence) for this quantity
-    const { card_unit_pence, wallet_unit_pence } = priceForQuantity(quantity);
-    const addWallet = !!walletAddon && Number(wallet_unit_pence) > 0;
+    // NOTE: your helper returns { cardUnit, walletUnit }
+    const { cardUnit, walletUnit } = priceForQuantity(quantity);
+    const addWallet = !!walletAddon && Number(walletUnit) > 0;
 
     // Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
           quantity,
           price_data: {
             currency: "gbp",
-            unit_amount: card_unit_pence,
+            unit_amount: cardUnit, // pence
             product_data: { name: "Printed ID card (CR80)" },
           },
         },
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
                 quantity,
                 price_data: {
                   currency: "gbp",
-                  unit_amount: wallet_unit_pence,
+                  unit_amount: walletUnit, // pence
                   product_data: { name: "Mobile Wallet Pass add-on" },
                 },
               } as const,
