@@ -1,15 +1,15 @@
 // app/layout.tsx
 import "./globals.css";
 import type { Metadata } from "next";
-import Nav from "@/components/nav"; // <— lowercase to match your file
+import Nav from "@/components/Nav"; // NOTE: Capital N to match the filename
 
 export const metadata: Metadata = {
   title: "BadgeFlow",
-  description: "Minimal site is live. Next: add pricing, order, Stripe & Supabase."
+  description: "Minimal site is live. Next: uploads, review & ordering."
 };
 
 export default function RootLayout({
-  children
+  children,
 }: {
   children: React.ReactNode;
 }) {
