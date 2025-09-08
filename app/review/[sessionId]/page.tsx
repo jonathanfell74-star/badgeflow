@@ -1,18 +1,17 @@
-// app/review/[session_id]/page.tsx
+// app/review/[sessionId]/page.tsx
 import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 
-// Server-side Supabase client (service role for listing objects & signed URLs)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE!
 );
 
-// Always fetch fresh (don’t cache), because uploads just happened.
+// Always fetch fresh data after uploads
 export const dynamic = "force-dynamic";
 
-// Very small CSV parser for our simple header + comma format
+// Minimal CSV utils for our simple format
 function parseCsv(text: string): { headers: string[]; rows: string[][] } {
   const lines = text
     .split(/\r?\n/)
@@ -20,7 +19,6 @@ function parseCsv(text: string): { headers: string[]; rows: string[][] } {
     .filter(Boolean);
 
   if (lines.length === 0) return { headers: [], rows: [] };
-
   const headers = lines[0].split(",").map((h) => h.trim());
   const rows = lines.slice(1).map((line) => line.split(",").map((c) => c.trim()));
   return { headers, rows };
@@ -46,11 +44,11 @@ function toMapByHeader(
 export default async function ReviewPage({
   params,
 }: {
-  params: { session_id: string };
+  params: { sessionId: string };
 }) {
-  const sessionId = params.session_id;
+  const sessionId = params.sessionId;
 
-  // 1) Load most recent order row for this Stripe session (contains storage paths)
+  // 1) Get the most recent order by session id
   const { data: order, error: orderErr } = await supabase
     .from("orders")
     .select("*")
@@ -76,20 +74,16 @@ export default async function ReviewPage({
     logo_path: string | null;
   };
 
-  // 2) Read roster CSV
+  // 2) Read roster CSV (if present)
   let rosterText = "";
   if (roster_path) {
-    const { data: rosterFile, error: rfErr } = await supabase.storage
-      .from("orders")
-      .download(roster_path);
-    if (rosterFile && !rfErr) {
-      rosterText = await rosterFile.text();
-    }
+    const { data: rosterFile } = await supabase.storage.from("orders").download(roster_path);
+    if (rosterFile) rosterText = await rosterFile.text();
   }
   const { headers, rows } = parseCsv(rosterText);
-  const rosterMap = toMapByHeader(headers, rows, "photo_filename"); // key by filename
+  const rosterMap = toMapByHeader(headers, rows, "photo_filename");
 
-  // 3) List photos in this session (prefix: uploads/{sessionId}/photos)
+  // 3) List uploaded photos for this session
   const photoPrefix = `uploads/${sessionId}/photos`;
   const { data: listing } = await supabase.storage.from("orders").list(photoPrefix, {
     limit: 1000,
@@ -98,7 +92,7 @@ export default async function ReviewPage({
     .filter((o) => o.name && !o.name.endsWith("/"))
     .map((o) => o.name);
 
-  // 4) Signed URLs + match to roster
+  // 4) Create signed URLs and match records
   type Match = {
     file: string;
     url: string;
@@ -112,7 +106,7 @@ export default async function ReviewPage({
     const fullPath = `${photoPrefix}/${name}`;
     const { data: signed } = await supabase.storage
       .from("orders")
-      .createSignedUrl(fullPath, 60 * 10); // 10 mins
+      .createSignedUrl(fullPath, 60 * 10); // 10 minutes
     const url = signed?.signedUrl ?? "";
 
     const rec = rosterMap.get(name.toLowerCase());
@@ -123,9 +117,10 @@ export default async function ReviewPage({
     }
   }
 
-  // 5) Quick CSV for missing download
+  // 5) CSV download of missing items (must be used on <a>, not <button>)
   const missingCsv =
     "missing_photo_filename\n" + missing.map((m) => `"${m}"`).join("\n");
+  const missingHref = `data:text/csv;charset=utf-8,${encodeURIComponent(missingCsv)}`;
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
@@ -174,56 +169,45 @@ export default async function ReviewPage({
             </details>
           )}
 
-          <form
-            className="mt-4"
-            method="post"
-            action={`data:text/csv;charset=utf-8,${encodeURIComponent(missingCsv)}`}
+          <a
+            href={missingHref}
+            download="missing_filenames.csv"
+            className="mt-4 inline-block w-full rounded-lg bg-sky-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-sky-700"
           >
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
-              download="missing_filenames.csv"
-            >
-              Download missing list (CSV)
-            </button>
-          </form>
+            Download missing list (CSV)
+          </a>
         </aside>
 
         {/* Card previews */}
         <section>
           <div className="mb-4 flex items-center gap-3">
-            {logo_path && (
-              <SmallLogo path={logo_path} />
-            )}
+            {logo_path && <SmallLogo path={logo_path} />}
             <h2 className="text-xl font-semibold">Matched ID card previews</h2>
           </div>
 
           {matches.length === 0 ? (
             <p className="text-slate-600">
-              No matches yet. Ensure your roster has a <code>photo_filename</code> column and
-              filenames match the uploaded images.
+              No matches yet. Ensure your roster has a <code>photo_filename</code> column
+              and filenames match the uploaded images.
             </p>
           ) : (
             <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {matches.map(({ file, url, rec }) => {
-                const forename =
-                  rec?.forename || rec?.first_name || rec?.firstname || "";
-                const surname =
-                  rec?.surname || rec?.last_name || rec?.lastname || "";
-                const jobTitle =
-                  rec?.job_title || rec?.title || "";
+                const forename = rec?.forename || rec?.first_name || rec?.firstname || "";
+                const surname = rec?.surname || rec?.last_name || rec?.lastname || "";
+                const jobTitle = rec?.job_title || rec?.title || "";
 
                 return (
                   <li key={file}>
                     <div className="rounded-2xl border bg-white p-4 shadow-sm">
-                      {/* Simple ID card shape: name left, photo right */}
+                      {/* Simple ID card: name left, photo right */}
                       <div className="relative mx-auto flex h-44 w-full max-w-sm items-center rounded-xl border bg-white p-3">
                         <div className="flex-1 pr-3">
                           <p className="text-base font-semibold leading-tight">
                             {forename} {surname}
                           </p>
                           <p className="mt-1 text-sm text-slate-600">{jobTitle}</p>
-                          <p className="mt-3 text-xs text-slate-500 break-words">{file}</p>
+                          <p className="mt-3 break-words text-xs text-slate-500">{file}</p>
                         </div>
                         <div className="h-32 w-24 overflow-hidden rounded-md border bg-slate-50">
                           {url ? (
@@ -252,7 +236,7 @@ export default async function ReviewPage({
   );
 }
 
-// Tiny helper to show company logo if one was uploaded
+// Small server component to render uploaded company logo (if present)
 async function SmallLogo({ path }: { path: string }) {
   const { data } = await supabase.storage.from("orders").createSignedUrl(path, 60 * 10);
   const url = data?.signedUrl ?? "";
