@@ -1,64 +1,53 @@
-import { NextResponse } from "next/server";
-import Stripe from "stripe";
+import { NextResponse } from 'next/server';
+import Stripe from 'stripe';
+import { createClient } from '@supabase/supabase-js';
+import { priceForQuantity } from '@/lib/pricing'; // your existing helper
 
-import { priceForQuantity } from "../../../../lib/pricing";
-import { computeCutoff } from "../../../../lib/cutoff";
-
-
-
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' });
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
 
 export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const { quantity, wallet } = body as { quantity: number; wallet: boolean };
+  const { order_id, walletAddon } = await req.json();
+  if (!order_id) return NextResponse.json({ error: 'Missing order_id' }, { status: 400 });
 
-    const secret = process.env.STRIPE_SECRET_KEY;
-    if (!secret) {
-      return NextResponse.json({ error: "Missing STRIPE_SECRET_KEY" }, { status: 500 });
-    }
-    const stripe = new Stripe(secret, { apiVersion: "2024-06-20" as any });
+  // read counts
+  const { data: order, error } = await supabase.from('orders')
+    .select('id, matched_count')
+    .eq('id', order_id)
+    .single();
 
-    const prices = priceForQuantity(quantity);
-    const { result, dispatchTarget } = computeCutoff();
+  if (error || !order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+  const quantity = order.matched_count || 0;
+  if (quantity <= 0) return NextResponse.json({ error: 'Nothing to charge' }, { status: 400 });
 
-    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+  const cardPence = priceForQuantity(quantity).card_unit_pence;
+  const walletPence = walletAddon ? priceForQuantity(quantity).wallet_unit_pence : 0;
+
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/order?success=1&order_id=${order_id}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/start`,
+    line_items: [
       {
         quantity,
         price_data: {
-          currency: "gbp",
-          unit_amount: Math.round(prices.cardUnit * 100),
-          product_data: { name: "Printed ID card (CR80)" }
-        }
-      }
-    ];
-    if (wallet) {
-      line_items.push({
+          currency: 'gbp',
+          unit_amount: cardPence,
+          product_data: { name: 'Printed ID card (CR80)' },
+        },
+      },
+      ...(walletPence > 0 ? [{
         quantity,
         price_data: {
-          currency: "gbp",
-          unit_amount: Math.round(prices.walletUnit * 100),
-          product_data: { name: "Mobile Wallet Pass add-on" }
-        }
-      });
-    }
+          currency: 'gbp',
+          unit_amount: walletPence,
+          product_data: { name: 'Mobile Wallet Pass add-on' },
+        },
+      }] : []),
+    ],
+    metadata: { order_id },
+  });
 
-    const base = process.env.NEXT_PUBLIC_BASE_URL || "https://example.com";
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      payment_method_types: ["card"],
-      line_items,
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/order?success=1&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${base}/order?canceled=1`,
-      metadata: {
-        quantity: String(quantity),
-        wallet: String(wallet),
-        cutoff_result: result,
-        dispatch_target: dispatchTarget
-      }
-    });
-
-    return NextResponse.json({ url: session.url });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Checkout error" }, { status: 500 });
-  }
+  // you can also update the order to track stripe_session_id here if you wish
+  return NextResponse.json({ url: session.url });
 }
