@@ -1,119 +1,270 @@
-"use client";
+// app/review/[session_id]/page.tsx
+import Image from "next/image";
+import Link from "next/link";
+import { createClient } from "@supabase/supabase-js";
 
-import { Suspense, useEffect, useState } from "react";
+// Server-side Supabase client (service role for listing objects & signed URLs)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE!
+);
 
-type Person = {
-  employee_id: string;
-  first_name: string;
-  last_name: string;
-  role: string;
-  site: string;
-  email: string;
-  photo_filename: string;
-  photo_url: string | null;
-  matched: boolean;
-};
+// Always fetch fresh (don’t cache), because uploads just happened.
+export const dynamic = "force-dynamic";
 
-function Card({ p }: { p: Person }) {
-  // credit-card-ish aspect ~1.586 (85.6x54mm). We'll render 320x202
-  const W = 320, H = 202;
+// Very small CSV parser for our simple header + comma format
+function parseCsv(text: string): { headers: string[]; rows: string[][] } {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return { headers: [], rows: [] };
+
+  const headers = lines[0].split(",").map((h) => h.trim());
+  const rows = lines.slice(1).map((line) => line.split(",").map((c) => c.trim()));
+  return { headers, rows };
+}
+
+function toMapByHeader(
+  headers: string[],
+  rows: string[][],
+  keyHeader: string
+): Map<string, Record<string, string>> {
+  const keyIdx = headers.findIndex((h) => h.toLowerCase() === keyHeader.toLowerCase());
+  const map = new Map<string, Record<string, string>>();
+  if (keyIdx === -1) return map;
+  for (const row of rows) {
+    const rec: Record<string, string> = {};
+    headers.forEach((h, i) => (rec[h] = row[i] ?? ""));
+    const k = (row[keyIdx] ?? "").toLowerCase();
+    if (k) map.set(k, rec);
+  }
+  return map;
+}
+
+export default async function ReviewPage({
+  params,
+}: {
+  params: { session_id: string };
+}) {
+  const sessionId = params.session_id;
+
+  // 1) Load most recent order row for this Stripe session (contains storage paths)
+  const { data: order, error: orderErr } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("stripe_session_id", sessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (orderErr || !order) {
+    return (
+      <main className="mx-auto max-w-5xl px-6 py-16">
+        <h1 className="text-2xl font-semibold">Review uploads</h1>
+        <p className="mt-4 text-red-600">Could not find an order for this session.</p>
+        <Link href="/dashboard" className="mt-6 inline-block text-indigo-600">
+          Back to dashboard
+        </Link>
+      </main>
+    );
+  }
+
+  const { roster_path, logo_path } = order as {
+    roster_path: string | null;
+    logo_path: string | null;
+  };
+
+  // 2) Read roster CSV
+  let rosterText = "";
+  if (roster_path) {
+    const { data: rosterFile, error: rfErr } = await supabase.storage
+      .from("orders")
+      .download(roster_path);
+    if (rosterFile && !rfErr) {
+      rosterText = await rosterFile.text();
+    }
+  }
+  const { headers, rows } = parseCsv(rosterText);
+  const rosterMap = toMapByHeader(headers, rows, "photo_filename"); // key by filename
+
+  // 3) List photos in this session (prefix: uploads/{sessionId}/photos)
+  const photoPrefix = `uploads/${sessionId}/photos`;
+  const { data: listing } = await supabase.storage.from("orders").list(photoPrefix, {
+    limit: 1000,
+  });
+  const files = (listing ?? [])
+    .filter((o) => o.name && !o.name.endsWith("/"))
+    .map((o) => o.name);
+
+  // 4) Signed URLs + match to roster
+  type Match = {
+    file: string;
+    url: string;
+    rec?: Record<string, string>;
+  };
+
+  const matches: Match[] = [];
+  const missing: string[] = [];
+
+  for (const name of files) {
+    const fullPath = `${photoPrefix}/${name}`;
+    const { data: signed } = await supabase.storage
+      .from("orders")
+      .createSignedUrl(fullPath, 60 * 10); // 10 mins
+    const url = signed?.signedUrl ?? "";
+
+    const rec = rosterMap.get(name.toLowerCase());
+    if (rec) {
+      matches.push({ file: name, url, rec });
+    } else {
+      missing.push(name);
+    }
+  }
+
+  // 5) Quick CSV for missing download
+  const missingCsv =
+    "missing_photo_filename\n" + missing.map((m) => `"${m}"`).join("\n");
+
   return (
-    <div style={{
-      width: W, height: H, borderRadius: 16, boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
-      border: "1px solid #e5e7eb", background: "#fff", overflow: "hidden", display: "grid",
-      gridTemplateColumns: "1fr 120px"
-    }}>
-      {/* left text panel */}
-      <div style={{ padding: 12, display: "grid", gridTemplateRows: "auto 1fr auto", gap: 6 }}>
-        {/* brand bar */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 18, height: 18, borderRadius: 4, background: "#4f46e5" }} />
-          <div style={{ fontWeight: 800, fontSize: 12, letterSpacing: 0.4, color: "#1f2937" }}>BadgeFlow</div>
-        </div>
-        {/* name + details */}
-        <div style={{ marginTop: 2 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", lineHeight: 1.1 }}>
-            {p.first_name || p.last_name ? `${p.first_name} ${p.last_name}`.trim() : "(No name)"}
-          </div>
-          <div style={{ fontSize: 12, color: "#475569", marginTop: 2 }}>
-            {p.role || "—"} {p.site ? `• ${p.site}` : ""}
-          </div>
-          <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-            ID: <span style={{ fontFamily: "monospace" }}>{p.employee_id || "—"}</span>
-          </div>
-        </div>
-        {/* footer line */}
-        <div style={{ fontSize: 10, color: p.matched ? "#16a34a" : "#b91c1c" }}>
-          {p.matched ? "Photo matched" : `Missing photo ${p.photo_filename ? `(${p.photo_filename})` : ""}`}
-        </div>
-      </div>
+    <main className="mx-auto max-w-6xl px-6 py-12">
+      <header className="flex items-center justify-between">
+        <Link href="/" className="text-2xl font-bold">BadgeFlow</Link>
+        <nav className="flex gap-6">
+          <Link href="/pricing" className="text-slate-700 hover:text-slate-900">Pricing</Link>
+          <Link href="/order" className="text-slate-700 hover:text-slate-900">Start an order</Link>
+          <Link href="/dashboard" className="text-slate-700 hover:text-slate-900">Dashboard</Link>
+        </nav>
+      </header>
 
-      {/* right photo panel */}
-      <div style={{ position: "relative", background: "#f1f5f9" }}>
-        {p.photo_url ? (
-          <img
-            src={p.photo_url}
-            alt={p.photo_filename || "photo"}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        ) : (
-          <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#94a3b8", fontSize: 12 }}>
-            No photo
+      <section className="mt-10 grid gap-10 lg:grid-cols-[360px_1fr]">
+        {/* Summary / actions */}
+        <aside className="rounded-2xl border p-6">
+          <h2 className="text-xl font-semibold">Upload summary</h2>
+          <dl className="mt-4 space-y-2 text-slate-700">
+            <div className="flex justify-between">
+              <dt>Photos uploaded</dt>
+              <dd className="font-medium">{files.length}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt>Roster rows</dt>
+              <dd className="font-medium">{rows.length}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt>Matched</dt>
+              <dd className="font-medium text-emerald-700">{matches.length}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt>Missing</dt>
+              <dd className="font-medium text-amber-700">{missing.length}</dd>
+            </div>
+          </dl>
+
+          {missing.length > 0 && (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-sm text-slate-700">
+                Show missing filenames
+              </summary>
+              <ul className="mt-2 list-disc pl-5 text-sm text-slate-600">
+                {missing.map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          <form
+            className="mt-4"
+            method="post"
+            action={`data:text/csv;charset=utf-8,${encodeURIComponent(missingCsv)}`}
+          >
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+              download="missing_filenames.csv"
+            >
+              Download missing list (CSV)
+            </button>
+          </form>
+        </aside>
+
+        {/* Card previews */}
+        <section>
+          <div className="mb-4 flex items-center gap-3">
+            {logo_path && (
+              <SmallLogo path={logo_path} />
+            )}
+            <h2 className="text-xl font-semibold">Matched ID card previews</h2>
           </div>
-        )}
-        {/* corner notch for style */}
-        <div style={{
-          position: "absolute", right: 0, top: 0, width: 0, height: 0,
-          borderLeft: "18px solid transparent", borderBottom: "18px solid rgba(79,70,229,0.9)"
-        }}/>
-      </div>
-    </div>
+
+          {matches.length === 0 ? (
+            <p className="text-slate-600">
+              No matches yet. Ensure your roster has a <code>photo_filename</code> column and
+              filenames match the uploaded images.
+            </p>
+          ) : (
+            <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {matches.map(({ file, url, rec }) => {
+                const forename =
+                  rec?.forename || rec?.first_name || rec?.firstname || "";
+                const surname =
+                  rec?.surname || rec?.last_name || rec?.lastname || "";
+                const jobTitle =
+                  rec?.job_title || rec?.title || "";
+
+                return (
+                  <li key={file}>
+                    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+                      {/* Simple ID card shape: name left, photo right */}
+                      <div className="relative mx-auto flex h-44 w-full max-w-sm items-center rounded-xl border bg-white p-3">
+                        <div className="flex-1 pr-3">
+                          <p className="text-base font-semibold leading-tight">
+                            {forename} {surname}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-600">{jobTitle}</p>
+                          <p className="mt-3 text-xs text-slate-500 break-words">{file}</p>
+                        </div>
+                        <div className="h-32 w-24 overflow-hidden rounded-md border bg-slate-50">
+                          {url ? (
+                            <Image
+                              src={url}
+                              alt={`${forename} ${surname}`}
+                              width={96}
+                              height={128}
+                              className="h-32 w-24 object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="h-full w-full bg-slate-100" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      </section>
+    </main>
   );
 }
 
-function ReviewClient({ sessionId }: { sessionId: string }) {
-  const [people, setPeople] = useState<Person[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`/api/orders/${encodeURIComponent(sessionId)}/review`);
-        const j = await res.json();
-        if (!res.ok) throw new Error(j.error || "Failed to load review data");
-        setPeople(j.people || []);
-      } catch (e: any) {
-        setErr(e.message || "Failed to load review data");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [sessionId]);
-
-  if (loading) return <div style={{ color: "#64748b" }}>Loading…</div>;
-  if (err) return <div style={{ color: "#b91c1c" }}>{err}</div>;
-
-  const matched = people.filter(p => p.matched).length;
-  const missing = people.length - matched;
-
+// Tiny helper to show company logo if one was uploaded
+async function SmallLogo({ path }: { path: string }) {
+  const { data } = await supabase.storage.from("orders").createSignedUrl(path, 60 * 10);
+  const url = data?.signedUrl ?? "";
+  if (!url) return null;
   return (
-    <div style={{ padding: "12px 16px" }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>ID Card Preview</h1>
-      <div style={{ color: "#334155", marginBottom: 12 }}>
-        Total: <strong>{people.length}</strong> • Matched: <strong style={{ color: "#16a34a" }}>{matched}</strong> • Missing: <strong style={{ color: "#b91c1c" }}>{missing}</strong>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
-        {people.map((p, i) => <Card key={i} p={p} />)}
-      </div>
-    </div>
-  );
-}
-
-export default function Page({ params }: { params: { sessionId: string } }) {
-  return (
-    <Suspense fallback={<div style={{ color: "#64748b" }}>Loading…</div>}>
-      <ReviewClient sessionId={params.sessionId} />
-    </Suspense>
+    <Image
+      src={url}
+      alt="Company logo"
+      width={40}
+      height={40}
+      className="rounded bg-white object-contain p-1 ring-1 ring-slate-200"
+      unoptimized
+    />
   );
 }
