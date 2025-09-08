@@ -1,25 +1,34 @@
-import Link from "next/link";
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export default function Nav() {
+  const pathname = usePathname();
+  const isActive = (href: string) => pathname === href;
+
+  const NavLink = ({ href, label }: { href: string; label: string }) => (
+    <Link
+      href={href}
+      className={`text-sm hover:text-sky-700 ${
+        isActive(href) ? 'font-semibold text-sky-700' : 'text-gray-700'
+      }`}
+    >
+      {label}
+    </Link>
+  );
+
   return (
-    <header style={{ borderBottom: "1px solid #e5e7eb", background: "#fff" }}>
-      <div
-        style={{
-          maxWidth: 960,
-          margin: "0 auto",
-          padding: "12px 16px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center"
-        }}
-      >
-        <Link href="/" style={{ fontWeight: 800, fontSize: 20 }}>
+    <header className="border-b">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <Link href="/" className="text-xl font-bold">
           BadgeFlow
         </Link>
-        <nav style={{ display: "flex", gap: 16 }}>
-          <Link href="/pricing">Pricing</Link>
-          <Link href="/order">Start an order</Link>
-          <Link href="/dashboard">Dashboard</Link>
+        <nav className="flex items-center gap-6">
+          <NavLink href="/pricing" label="Pricing" />
+          <NavLink href="/start" label="Start an order" />
+          <NavLink href="/single" label="Single card" />
+          <NavLink href="/dashboard" label="Dashboard" />
         </nav>
       </div>
     </header>
