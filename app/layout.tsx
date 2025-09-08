@@ -1,22 +1,23 @@
-import './globals.css';
-import type { Metadata } from 'next';
-import Nav from '@/components/Nav';
+// app/layout.tsx
+import "./globals.css";
+import type { Metadata } from "next";
+import Nav from "@/components/nav"; // <— lowercase to match your file
 
 export const metadata: Metadata = {
-  title: 'BadgeFlow',
-  description: 'Order staff ID cards — upload roster and photos, pay for exactly what matches.',
+  title: "BadgeFlow",
+  description: "Minimal site is live. Next: add pricing, order, Stripe & Supabase."
 };
 
 export default function RootLayout({
-  children,
+  children
 }: {
   children: React.ReactNode;
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-white text-gray-900">
+      <body>
         <Nav />
-        <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+        <main className="mx-auto max-w-5xl p-6">{children}</main>
       </body>
     </html>
   );
