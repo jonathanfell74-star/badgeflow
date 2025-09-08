@@ -1,21 +1,23 @@
-import "./globals.css";
-import Nav from "../components/Nav"; // <- add this
+import './globals.css';
+import type { Metadata } from 'next';
+import Nav from '@/components/Nav';
 
-export const metadata = {
-  title: "BadgeFlow — Staff ID cards",
-  description: "BadgeFlow minimal starter"
+export const metadata: Metadata = {
+  title: 'BadgeFlow',
+  description: 'Order staff ID cards — upload roster and photos, pay for exactly what matches.',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body style={{ fontFamily: "system-ui, sans-serif", margin: 0 }}>
-        <Nav /> {/* <- add this */}
-        <main style={{ maxWidth: 960, margin: "40px auto", padding: "0 16px" }}>
-          {children}
-        </main>
+      <body className="min-h-screen bg-white text-gray-900">
+        <Nav />
+        <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
       </body>
     </html>
   );
 }
-
