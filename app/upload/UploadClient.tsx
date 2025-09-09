@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 
 type MatchedCard = { file: string; name: string; url: string };
 type MissingRow = { file: string; name: string; row: Record<string, string> };
+type OrphanCard = { file: string; url: string };
+
 type UploadResult = {
   ok: boolean;
   batch_id: string;
@@ -12,9 +14,13 @@ type UploadResult = {
   roster_rows: number;
   matched: number;
   missing: string[];
+
   matchedCards: MatchedCard[];
   missingRows: MissingRow[];
-  orphanCards: { file: string; url: string }[];
+  orphanCards: OrphanCard[];
+
+  // Optional (future): if API returns a signed logo URL we’ll show it
+  logoUrl?: string | null;
 };
 
 export default function UploadClient() {
@@ -68,198 +74,183 @@ export default function UploadClient() {
   }
 
   return (
-    <div style={{ maxWidth: 980, margin: '0 auto', padding: '24px 16px' }}>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 8 }}>
-        <a href="/" style={{ fontWeight: 700, textDecoration: 'underline' }}>BadgeFlow</a>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 16 }}>
+    <div className="mx-auto max-w-5xl px-4 py-8">
+      {/* Minimal header */}
+      <div className="mb-2 flex items-center gap-4">
+        <a href="/" className="font-bold underline">BadgeFlow</a>
+        <nav className="ml-auto flex items-center gap-4 text-slate-600">
           <a href="/pricing">Pricing</a>
           <a href="/order">Start an order</a>
-          <a href="/upload" style={{ fontWeight: 700, textDecoration: 'underline' }}>Upload</a>
+          <a href="/upload" className="font-semibold underline">Upload</a>
           <a href="/dashboard">Dashboard</a>
-        </div>
+        </nav>
       </div>
 
-      <h1 style={{ fontSize: 40, fontWeight: 800, margin: '12px 0 16px' }}>Upload order files</h1>
+      <h1 className="mb-4 text-4xl font-extrabold">Upload order files</h1>
 
       {!batchId ? (
-        <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
-          <div
-            style={{
-              background: '#eef2ff',
-              border: '1px solid #c7d2fe',
-              color: '#3730a3',
-              padding: '12px 14px',
-              borderRadius: 8,
-            }}
-          >
-            Click “Start new upload” to create a batch, then you can attach your logo, roster and photos.
+        <div className="mb-6 space-y-3">
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-indigo-900">
+            Click <b>Start new upload</b> to create a batch, then attach your logo, roster and photos.
           </div>
           <button
             onClick={startNewBatch}
             disabled={busy}
-            style={{
-              width: 240,
-              background: '#4f46e5',
-              color: 'white',
-              fontWeight: 700,
-              padding: '12px 14px',
-              borderRadius: 10,
-              border: 'none',
-              cursor: busy ? 'not-allowed' : 'pointer',
-              opacity: busy ? 0.7 : 1,
-            }}
+            className="w-56 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
           >
             {busy ? 'Creating…' : 'Start new upload'}
           </button>
         </div>
       ) : (
-        <div
-          style={{
-            background: '#ecfdf5',
-            border: '1px solid #a7f3d0',
-            color: '#065f46',
-            padding: '10px 12px',
-            borderRadius: 8,
-            marginBottom: 16,
-          }}
-        >
+        <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900">
           Batch ID: <code>{batchId}</code>
         </div>
       )}
 
-      <form onSubmit={onSubmit} encType="multipart/form-data" style={{ display: 'grid', gap: 16 }}>
+      <form onSubmit={onSubmit} encType="multipart/form-data" className="grid gap-4">
         <input type="hidden" name="batch_id" value={batchId} />
 
-        <label style={{ fontSize: 20, fontWeight: 700 }}>
-          Company logo (PNG/SVG/JPG)
-          <div style={{ marginTop: 8 }}>
-            <input type="file" name="logo" accept=".png,.jpg,.jpeg,.svg" disabled={!batchId} />
-          </div>
-        </label>
+        <div>
+          <label className="block text-lg font-semibold">
+            Company logo (PNG/SVG/JPG)
+          </label>
+          <input
+            type="file"
+            name="logo"
+            accept=".png,.jpg,.jpeg,.svg"
+            className="mt-2"
+            disabled={!batchId}
+          />
+        </div>
 
-        <label style={{ fontSize: 20, fontWeight: 700 }}>
-          Staff roster (CSV/XLSX) — must include a column named <code>photo_filename</code>
-          <div style={{ marginTop: 8 }}>
-            <input
-              type="file"
-              name="roster"
-              accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-              disabled={!batchId}
-            />
-          </div>
-        </label>
+        <div>
+          <label className="block text-lg font-semibold">
+            Staff roster (CSV/XLSX) — must include a column named <code>photo_filename</code>
+          </label>
+          <input
+            type="file"
+            name="roster"
+            accept=".csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            className="mt-2"
+            disabled={!batchId}
+          />
+          <p className="mt-1 text-sm text-slate-500">
+            Tip: <code>photo_filename</code> must exactly match the image file names (e.g. <code>E1234.jpg</code>).
+          </p>
+        </div>
 
-        <p style={{ color: '#667085', marginTop: -4 }}>
-          Tip: values in <code>photo_filename</code> must exactly match the image file names (e.g.
-          <code> E1234.jpg</code>).
-        </p>
+        <div>
+          <label className="block text-lg font-semibold">
+            Staff photos (JPG/PNG) — you can select multiple
+          </label>
+          <input
+            type="file"
+            name="photos"
+            accept="image/*"
+            multiple
+            className="mt-2"
+            disabled={!batchId}
+          />
+        </div>
 
-        <label style={{ fontSize: 20, fontWeight: 700 }}>
-          Staff photos (JPG/PNG) — you can select multiple
-          <div style={{ marginTop: 8 }}>
-            <input type="file" name="photos" accept="image/*" multiple disabled={!batchId} />
-          </div>
-        </label>
-
-        <label style={{ fontSize: 20, fontWeight: 700 }}>
-          Notes (optional)
+        <div>
+          <label className="block text-lg font-semibold">Notes (optional)</label>
           <textarea
             name="notes"
             placeholder="Anything we should know about this batch?"
+            className="mt-2 w-full rounded-md border p-3"
+            rows={4}
             disabled={!batchId}
-            style={{
-              display: 'block',
-              marginTop: 8,
-              width: '100%',
-              minHeight: 120,
-              padding: 12,
-              border: '1px solid #e5e7eb',
-              borderRadius: 8,
-            }}
           />
-        </label>
+        </div>
 
         {error && (
-          <div
-            style={{
-              background: '#fee2e2',
-              color: '#7f1d1d',
-              border: '1px solid #fecaca',
-              padding: '10px 12px',
-              borderRadius: 8,
-            }}
-          >
-            {JSON.stringify({ error })}
+          <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
+            {error}
           </div>
         )}
 
         <button
           type="submit"
           disabled={!batchId || busy}
-          style={{
-            background: '#0f766e',
-            color: 'white',
-            fontWeight: 700,
-            padding: '14px 16px',
-            borderRadius: 10,
-            border: 'none',
-            cursor: !batchId || busy ? 'not-allowed' : 'pointer',
-            opacity: !batchId || busy ? 0.7 : 1,
-          }}
+          className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
         >
           {busy ? 'Uploading…' : 'Upload files'}
         </button>
       </form>
 
-      {/* Your existing summary & previews render here unchanged (result state) */}
+      {/* Results */}
       {result && (
-        <div style={{ marginTop: 28 }}>
-          <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Upload summary</h2>
-          <div style={{ lineHeight: 1.9 }}>
-            <div>Photos uploaded: <strong>{result.photos_uploaded}</strong></div>
-            <div>Roster rows: <strong>{result.roster_rows}</strong></div>
-            <div>Matched: <strong>{result.matched}</strong></div>
-            <div>Missing: <strong>{result.missing.length}</strong></div>
+        <div className="mt-8 rounded-lg border p-4">
+          <h2 className="mb-2 text-xl font-semibold">Upload summary</h2>
+          <div className="text-sm">
+            <div>Photos uploaded: <b>{result.photos_uploaded}</b></div>
+            <div>Roster rows: <b>{result.roster_rows}</b></div>
+            <div>Matched: <b>{result.matched}</b></div>
+            <div>Missing: <b>{result.missing.length}</b></div>
           </div>
 
           {/* Matched */}
-          <section style={{ marginTop: 20 }}>
-            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
-              Matched cards ({result.matchedCards.length})
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-              {result.matchedCards.map((c) => (
-                <CardPreview key={`m-${c.file}`} name={c.name} file={c.file} url={c.url} />
-              ))}
-            </div>
-          </section>
-
-          {/* Missing rows */}
-          {result.missingRows.length > 0 && (
-            <section style={{ marginTop: 28 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
-                Missing photo for roster rows ({result.missingRows.length})
+          {result.matchedCards.length > 0 && (
+            <>
+              <h3 className="mt-6 text-lg font-semibold">
+                Matched cards ({result.matchedCards.length})
               </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-                {result.missingRows.map((m) => (
-                  <CardPreview key={`x-${m.file}`} name={m.name || '(no name)'} file={m.file} url={null} />
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {result.matchedCards.map((c) => (
+                  <IDCard
+                    key={`m-${c.file}`}
+                    name={c.name}
+                    subline={c.file}
+                    imgUrl={c.url}
+                    badge={{ text: 'Matched', color: 'emerald' }}
+                    logoUrl={result.logoUrl ?? null}
+                  />
                 ))}
               </div>
-            </section>
+            </>
           )}
 
-          {/* Orphans */}
-          {result.orphanCards.length > 0 && (
-            <section style={{ marginTop: 28 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
-                Photos without a matching roster row ({result.orphanCards.length})
+          {/* Missing photo */}
+          {result.missingRows.length > 0 && (
+            <>
+              <h3 className="mt-6 text-lg font-semibold">
+                Missing photo for roster rows ({result.missingRows.length})
               </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-                {result.orphanCards.map((o) => (
-                  <CardPreview key={`o-${o.file}`} name="(no roster match)" file={o.file} url={o.url} />
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {result.missingRows.map((m) => (
+                  <IDCard
+                    key={`x-${m.file}`}
+                    name={m.name || '(no name)'}
+                    subline={m.file}
+                    imgUrl={null}
+                    badge={{ text: 'Missing photo', color: 'red' }}
+                    logoUrl={result.logoUrl ?? null}
+                  />
                 ))}
               </div>
-            </section>
+            </>
+          )}
+
+          {/* Orphan photos */}
+          {result.orphanCards.length > 0 && (
+            <>
+              <h3 className="mt-6 text-lg font-semibold">
+                Photos without a matching roster row ({result.orphanCards.length})
+              </h3>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {result.orphanCards.map((o) => (
+                  <IDCard
+                    key={`o-${o.file}`}
+                    name="(no roster match)"
+                    subline={o.file}
+                    imgUrl={o.url}
+                    badge={{ text: 'No roster row', color: 'yellow' }}
+                    logoUrl={result.logoUrl ?? null}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -267,46 +258,91 @@ export default function UploadClient() {
   );
 }
 
-function CardPreview({ name, file, url }: { name: string; file: string; url: string | null }) {
+/** CR80 ID card preview (85.6 × 54 mm) */
+function IDCard({
+  name,
+  subline,
+  imgUrl,
+  badge,
+  logoUrl,
+}: {
+  name: string;
+  subline?: string;
+  imgUrl: string | null;
+  logoUrl?: string | null;
+  badge?: { text: string; color: 'emerald' | 'red' | 'yellow' };
+}) {
+  const badgeClass =
+    badge?.color === 'emerald'
+      ? 'bg-emerald-100 text-emerald-800'
+      : badge?.color === 'red'
+      ? 'bg-rose-100 text-rose-800'
+      : 'bg-amber-100 text-amber-800';
+
   return (
     <div
-      style={{
-        height: 180,
-        borderRadius: 14,
-        boxShadow: '0 1px 2px rgba(0,0,0,.07), 0 4px 12px rgba(0,0,0,.06)',
-        background: '#fff',
-        overflow: 'hidden',
-        display: 'grid',
-        gridTemplateColumns: '1fr 150px',
-      }}
+      className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      style={{ aspectRatio: '86 / 54' }}
     >
-      <div style={{ padding: 14, display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
-        <div style={{ fontWeight: 800, fontSize: 18, lineHeight: 1.2, marginBottom: 6, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-          {name || '(no name)'}
-        </div>
-        <div style={{ color: '#6b7280', fontSize: 13, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-          {file}
-        </div>
+      {/* Top brand bar */}
+      <div className="relative h-6 w-full bg-gradient-to-r from-sky-600 to-indigo-600">
+        {/* lanyard slot */}
+        <div className="absolute left-1/2 top-1.5 h-2 w-12 -translate-x-1/2 rounded-sm bg-white/80 shadow-sm" />
       </div>
-      <div style={{ position: 'relative', background: '#f8fafc' }}>
-        {url ? (
-          <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        ) : (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              border: '2px dashed #cbd5e1',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#64748b',
-              fontSize: 12,
-            }}
-          >
-            no image
+
+      {/* Badge */}
+      {badge && (
+        <span className={`absolute right-2 top-2 rounded px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}>
+          {badge.text}
+        </span>
+      )}
+
+      {/* Body */}
+      <div className="grid h-[calc(100%-1.5rem)] grid-cols-[1fr,110px] gap-3 p-3">
+        {/* Left: identity text + tiny logo */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="logo"
+                className="h-4 w-4 rounded-sm object-contain ring-1 ring-white/30"
+              />
+            ) : (
+              <div className="h-4 w-4 rounded-sm bg-sky-600" />
+            )}
+            <div className="truncate text-[10px] uppercase tracking-wide text-slate-500">
+              Company
+            </div>
           </div>
-        )}
+
+          <div className="mt-1 truncate text-lg font-semibold text-slate-900">
+            {name || '—'}
+          </div>
+          {subline && (
+            <div className="truncate text-[12px] text-slate-500">{subline}</div>
+          )}
+
+          {/* Optional extra fields could go here later (role, dept, ID number) */}
+        </div>
+
+        {/* Right: photo (or placeholder) */}
+        <div className="overflow-hidden rounded-md ring-1 ring-slate-200">
+          {imgUrl ? (
+            <img
+              src={imgUrl}
+              alt={name}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-slate-50">
+              <div className="flex flex-col items-center text-slate-400">
+                <div className="mb-1 h-10 w-10 rounded-full border-2 border-dashed border-slate-300" />
+                <div className="text-[11px]">no image</div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
