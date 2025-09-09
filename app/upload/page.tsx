@@ -1,144 +1,164 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+
+type Preview = { file: string; url: string };
+type Summary = {
+  ok: boolean;
+  batch_id: string;
+  photos_uploaded: number;
+  roster_rows: number;
+  matched: number;
+  missing: string[];
+  previews: Preview[];
+};
 
 export default function UploadPage() {
-  const router = useRouter();
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [sum, setSum] = useState<Summary | null>(null);
 
-  const logoRef = useRef<HTMLInputElement | null>(null);
-  const rosterRef = useRef<HTMLInputElement | null>(null);
-  const photosRef = useRef<HTMLInputElement | null>(null);
-  const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // auto-create a batch if no ?batch_id= is present
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const existing = params.get('batch_id');
+    if (existing) {
+      setBatchId(existing);
+      return;
+    }
+    (async () => {
+      try {
+        const r = await fetch('/api/batches', { method: 'POST' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Failed to start batch');
+        params.set('batch_id', j.id);
+        const newUrl = `${location.pathname}?${params.toString()}`;
+        window.history.replaceState({}, '', newUrl);
+        setBatchId(j.id);
+      } catch (e: any) {
+        setErr(e.message);
+      }
+    })();
+  }, []);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-
+    if (!batchId) return;
+    setBusy(true);
+    setErr(null);
+    setSum(null);
     try {
-      const fd = new FormData();
-
-      // single company logo
-      if (logoRef.current?.files?.[0]) {
-        fd.append('logo', logoRef.current.files[0]);
-      }
-
-      // single roster (CSV/XLSX)
-      if (rosterRef.current?.files?.[0]) {
-        fd.append('roster', rosterRef.current.files[0]);
-      }
-
-      // multiple staff photos
-      if (photosRef.current?.files && photosRef.current.files.length > 0) {
-        Array.from(photosRef.current.files).forEach((f) =>
-          fd.append('photos', f)
-        );
-      }
-
-      if (notes.trim()) fd.append('notes', notes.trim());
-
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: fd,
-      });
-
-      if (!res.ok) {
-        const t = await res.text().catch(() => '');
-        throw new Error(t || `Upload failed (${res.status})`);
-      }
-
-      const json = await res.json();
-      // our API returns { ok, sessionId, ... }
-      if (json?.sessionId) {
-        router.push(`/review/${json.sessionId}`);
-        return;
-      }
-
-      throw new Error('Unexpected response from server');
-    } catch (err: any) {
-      setError(err?.message || 'Upload failed');
+      const fd = new FormData(e.currentTarget);
+      fd.set('batch_id', batchId);
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Upload failed');
+      setSum(j);
+    } catch (e: any) {
+      setErr(e.message);
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   }
 
+  const cardPreviews = useMemo(() => {
+    if (!sum?.previews?.length) return null;
+    return (
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+        {sum.previews.map((p) => (
+          <div
+            key={p.file}
+            className="flex items-center rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+            style={{ aspectRatio: '86/54' }} // ID card ratio-ish
+          >
+            <div className="flex-1 pr-4">
+              <div className="text-sm text-gray-500">Preview</div>
+              <div className="mt-1 font-semibold">{p.file}</div>
+              {/* When you parse roster with names, show First Last here */}
+            </div>
+            <img
+              src={p.url}
+              alt={p.file}
+              className="h-full w-28 rounded-md object-cover"
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }, [sum]);
+
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <h1 className="mb-6 text-2xl font-semibold">Upload order files</h1>
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <h1 className="mb-4 text-3xl font-bold">Upload order files</h1>
 
-      <form onSubmit={onSubmit} className="space-y-6">
+      {!batchId && <p className="text-gray-500">Preparing your upload…</p>}
+
+      {err && (
+        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {err}
+        </div>
+      )}
+
+      <form onSubmit={onSubmit} className="space-y-6" encType="multipart/form-data">
         <div>
-          <label className="block text-sm font-medium mb-1">
-            Company logo (PNG/SVG/JPG)
-          </label>
-          <input
-            ref={logoRef}
-            type="file"
-            accept=".png,.jpg,.jpeg,.svg"
-            className="block w-full cursor-pointer rounded border p-2"
-          />
+          <label className="block font-medium">Company logo (PNG/SVG/JPG)</label>
+          <input name="logo" type="file" accept=".png,.jpg,.jpeg,.svg" className="mt-2" />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">
-            Staff roster (CSV/XLSX) — must include a column named{' '}
-            <code>photo_filename</code>
+          <label className="block font-medium">
+            Staff roster (CSV/XLSX) — must include a column named <code>photo_filename</code>
           </label>
-          <input
-            ref={rosterRef}
-            type="file"
-            accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-            className="block w-full cursor-pointer rounded border p-2"
-          />
-          <p className="mt-2 text-xs text-gray-600">
-            Tip: values in <code>photo_filename</code> must exactly match the
-            image file names (e.g. <code>E1234.jpg</code>).
-          </p>
+          <input name="roster" type="file" accept=".csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="mt-2" />
         </div>
 
+        <p className="text-sm text-gray-500">
+          Tip: values in <code>photo_filename</code> must exactly match the image file names (e.g. <code>E1234.jpg</code>).
+        </p>
+
         <div>
-          <label className="block text-sm font-medium mb-1">
+          <label className="block font-medium">
             Staff photos (JPG/PNG) — you can select multiple
           </label>
-          <input
-            ref={photosRef}
-            type="file"
-            multiple
-            accept=".jpg,.jpeg,.png"
-            className="block w-full cursor-pointer rounded border p-2"
-          />
+          <input name="photos" type="file" multiple accept=".jpg,.jpeg,.png" className="mt-2" />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">
-            Notes (optional)
-          </label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={4}
-            className="block w-full rounded border p-2"
-            placeholder="Anything we should know about this batch?"
-          />
+          <label className="block font-medium">Notes (optional)</label>
+          <textarea name="notes" rows={4} className="mt-2 w-full rounded-md border p-2" placeholder="Anything we should know about this batch?" />
         </div>
-
-        {error && (
-          <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
-        )}
 
         <button
           type="submit"
-          disabled={submitting}
-          className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+          disabled={!batchId || busy}
+          className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
         >
-          {submitting ? 'Uploading…' : 'Upload files'}
+          {busy ? 'Uploading…' : 'Upload files'}
         </button>
       </form>
+
+      {sum && (
+        <div className="mt-8 rounded-lg border p-4">
+          <h2 className="mb-2 text-xl font-semibold">Upload summary</h2>
+          <div className="text-sm">
+            <div>Photos uploaded: <b>{sum.photos_uploaded}</b></div>
+            <div>Roster rows: <b>{sum.roster_rows}</b></div>
+            <div>Matched: <b>{sum.matched}</b></div>
+            <div>Missing: <b>{sum.missing.length}</b></div>
+            {sum.missing.length > 0 && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-sky-700">Show missing filenames</summary>
+                <ul className="mt-1 list-disc pl-6 text-gray-700">
+                  {sum.missing.map((m) => <li key={m}>{m}</li>)}
+                </ul>
+              </details>
+            )}
+          </div>
+
+          {cardPreviews}
+        </div>
+      )}
     </div>
   );
 }
