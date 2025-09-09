@@ -1,4 +1,3 @@
-// app/api/upload/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
@@ -8,162 +7,165 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE!
 );
 
-const BUCKET = 'orders';
+const BUCKET = 'uploads';
 
 async function uploadFile(path: string, file: File) {
-  const bytes = await file.arrayBuffer();
+  const arr = Buffer.from(await file.arrayBuffer());
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(path, bytes, {
+    .upload(path, arr, {
       upsert: true,
+      cacheControl: '3600',
       contentType: file.type || 'application/octet-stream',
     });
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return path;
 }
 
-function parseRoster(buffer: ArrayBuffer) {
-  const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<any>(ws, { defval: '' });
-  return rows.map((r) => ({
-    first_name: String(r.first_name || r.firstname || '').trim(),
-    last_name: String(r.last_name || r.lastname || '').trim(),
-    photo_filename: String(r.photo_filename || '').trim(),
-  }));
+function parseRoster(fileName: string, textOrBinary: Uint8Array | string) {
+  // Accept CSV and XLSX
+  if (fileName.toLowerCase().endsWith('.csv')) {
+    const text = typeof textOrBinary === 'string'
+      ? textOrBinary
+      : new TextDecoder().decode(textOrBinary as Uint8Array);
+    // Simple CSV parse – first line headers
+    const [head, ...rows] = text.split(/\r?\n/).filter(Boolean);
+    const headers = head.split(',').map(h => h.trim());
+    return rows.map(r => {
+      const cols = r.split(',');
+      const obj: Record<string, string> = {};
+      headers.forEach((h, i) => (obj[h] = (cols[i] ?? '').trim()));
+      return obj;
+    });
+  } else {
+    const wb = XLSX.read(textOrBinary, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws) as Record<string, string>[];
+  }
 }
 
 export async function POST(req: Request) {
   try {
     const form = await req.formData();
 
-    const existingOrderId = (form.get('order_id') as string) || null;
-    const notes = (form.get('notes') as string) || '';
-
-    const logo = (form.get('logo') as File) || null;
-    const roster = (form.get('roster') as File) || null;
-    const photos = (form.getAll('photos') as File[]) || [];
-
-    // 1) Ensure we have an order (create draft if missing)
-    let order_id = existingOrderId;
-    if (!order_id) {
-      const { data, error } = await supabase
-        .from('orders')
-        .insert({ status: 'draft', notes })
-        .select('id')
-        .single();
-
-      if (error || !data) {
-        throw new Error(error?.message || 'Failed to create draft order');
-      }
-      order_id = data.id;
-    } else if (notes) {
-      await supabase.from('orders').update({ notes }).eq('id', order_id);
+    const batch_id = (form.get('batch_id') as string) || '';
+    if (!batch_id) {
+      return NextResponse.json({ error: 'Missing batch_id' }, { status: 400 });
     }
 
-    // 2) Upload logo & roster; keep their paths on the order
-    let logo_path: string | null = null;
-    if (logo) {
-      const ext = logo.name.split('.').pop();
-      logo_path = `${order_id}/logo.${ext}`;
-      await uploadFile(logo_path, logo);
-      await supabase.from('orders').update({ logo_path }).eq('id', order_id);
+    // Check batch exists
+    const { data: batch } = await supabase
+      .from('batches')
+      .select('id, logo_path, roster_path, notes')
+      .eq('id', batch_id)
+      .single();
+
+    if (!batch) {
+      return NextResponse.json({ error: 'Invalid batch_id' }, { status: 400 });
     }
 
-    let roster_path: string | null = null;
-    let rosterRows: { first_name: string; last_name: string; photo_filename: string }[] = [];
+    const notes = (form.get('notes') as string) || null;
 
-    if (roster) {
-      roster_path = `${order_id}/${roster.name}`;
-      await uploadFile(roster_path, roster);
-
-      const parsed = parseRoster(await roster.arrayBuffer());
-      rosterRows = parsed;
-      await supabase.from('orders').update({ roster_path }).eq('id', order_id);
-    } else {
-      // attempt to use previously uploaded roster
-      const { data: order } = await supabase
-        .from('orders')
-        .select('roster_path')
-        .eq('id', order_id)
-        .single();
-
-      if (order?.roster_path) {
-        const { data: dl } = await supabase.storage
-          .from(BUCKET)
-          .download(order.roster_path);
-        if (dl) {
-          const buf = await dl.arrayBuffer();
-          rosterRows = parseRoster(buf);
-        }
-      }
+    // Optional logo
+    const logoFile = form.get('logo') as File | null;
+    let logo_path: string | null = batch.logo_path ?? null;
+    if (logoFile && typeof logoFile.name === 'string' && logoFile.size > 0) {
+      logo_path = await uploadFile(`batches/${batch_id}/logo/${logoFile.name}`, logoFile);
     }
 
-    // 3) Upload photos (if any)
-    const photoPaths: string[] = [];
-    for (const f of photos) {
-      const filename = f.name;
-      const path = `${order_id}/photos/${filename}`;
-      await uploadFile(path, f);
-      photoPaths.push(path);
+    // Optional roster
+    const rosterFile = form.get('roster') as File | null;
+    let roster_path: string | null = batch.roster_path ?? null;
+    let rosterRows: Record<string, string>[] = [];
+
+    if (rosterFile && typeof rosterFile.name === 'string' && rosterFile.size > 0) {
+      const bin = new Uint8Array(await rosterFile.arrayBuffer());
+      rosterRows = parseRoster(rosterFile.name, bin);
+      roster_path = await uploadFile(`batches/${batch_id}/roster/${rosterFile.name}`, rosterFile);
+    } else if (batch.roster_path) {
+      // If they didn't upload this time, we could optionally fetch and parse existing.
+      // For now, just leave rosterRows empty; matches will use only current photos count.
+      roster_path = batch.roster_path;
     }
 
-    // 4) If no photos uploaded now, list existing ones so we can still match
-    if (photoPaths.length === 0) {
-      const { data: listed } = await supabase.storage
-        .from(BUCKET)
-        .list(`${order_id}/photos`, { limit: 1000 });
-      for (const item of listed || []) {
-        photoPaths.push(`${order_id}/photos/${item.name}`);
-      }
+    // Photos (multi)
+    const photos = form.getAll('photos').filter(Boolean) as File[];
+    const uploadedPhotoPaths: string[] = [];
+    const photoFileNames = new Set<string>();
+
+    for (const pf of photos) {
+      if (!pf || typeof pf.name !== 'string' || pf.size === 0) continue;
+      const dest = `batches/${batch_id}/photos/${pf.name}`;
+      await uploadFile(dest, pf);
+      uploadedPhotoPaths.push(dest);
+      photoFileNames.add(pf.name.toLowerCase());
     }
 
-    // 5) Build match/mismatch summary (avoid for..of over Set)
-    const rosterSet = new Set(
-      rosterRows
-        .map((r) => r.photo_filename.toLowerCase())
-        .filter((s) => !!s)
-    );
-    const photoFileNames = photoPaths.map((p) => p.split('/').pop()!.toLowerCase());
+    // Build roster filename set (look for a "photo_filename" column)
+    const rosterFileNames = new Set<string>();
+    if (rosterRows.length) {
+      const guessedKey =
+        Object.keys(rosterRows[0]).find(k => k.toLowerCase() === 'photo_filename') ??
+        Object.keys(rosterRows[0])[0]; // last resort first col
+
+      rosterRows.forEach((row) => {
+        const val = (row[guessedKey] ?? '').toString().trim();
+        if (val) rosterFileNames.add(val.toLowerCase());
+      });
+    }
 
     let matched = 0;
     const missing: string[] = [];
-    rosterSet.forEach((r) => {
-      if (photoFileNames.includes(r)) matched++;
-      else missing.push(r);
+
+    Array.from(rosterFileNames).forEach((fname) => {
+      if (photoFileNames.has(fname)) matched++;
+      else missing.push(fname);
     });
 
-    // 6) Signed URLs for preview grid
-    const { data: signed } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrls(photoPaths, 60 * 10); // 10 minutes
+    // Generate signed preview URLs for the uploaded/known photos
+    const previewTargets = Array.from(photoFileNames).map(
+      (f) => `batches/${batch_id}/photos/${f}`
+    );
 
-    const previews =
-      signed?.map((s) => ({
-        name: s.path.split('/').pop()!,
-        url: s.signedUrl!,
-      })) || [];
+    let previews: { file: string; url: string }[] = [];
+    if (previewTargets.length) {
+      const { data: signed } = await supabase.storage
+        .from(BUCKET)
+        .createSignedUrls(previewTargets, 600);
+      previews =
+        (signed ?? []).map((s, i) => ({
+          file: previewTargets[i].split('/').pop() || previewTargets[i],
+          url: s.signedUrl,
+        })) ?? [];
+    }
 
-    // Use order_id as the session key for review
+    // Update batch record
+    const { error: updErr } = await supabase
+      .from('batches')
+      .update({
+        logo_path,
+        roster_path,
+        notes,
+        photo_count: previews.length,
+        matched_count: matched,
+        status: 'uploaded',
+      })
+      .eq('id', batch_id);
+
+    if (updErr) {
+      return NextResponse.json({ error: updErr.message }, { status: 500 });
+    }
+
     return NextResponse.json({
       ok: true,
-      sessionId: order_id,
-      order_id,
-      counts: {
-        photosUploadedNow: photos.length,
-        rosterRows: rosterRows.length,
-        matched,
-        missing: missing.length,
-      },
+      batch_id,
+      photos_uploaded: previews.length,
+      roster_rows: rosterFileNames.size,
+      matched,
       missing,
       previews,
-      logo_path,
-      roster_path,
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message || 'Upload failed' },
-      { status: 400 }
-    );
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? 'Upload failed' }, { status: 500 });
   }
 }
