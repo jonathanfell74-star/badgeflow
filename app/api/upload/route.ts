@@ -30,10 +30,11 @@ function parseRoster(fileName: string, binOrText: Uint8Array | string) {
         ? binOrText
         : new TextDecoder().decode(binOrText as Uint8Array);
 
-    const [head, ...rows] = text.split(/\r?\n/).filter(Boolean);
-    const headers = head.split(',').map((h) => h.trim());
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if (!lines.length) return [];
+    const headers = lines[0].split(',').map((h) => h.trim());
 
-    return rows.map((r) => {
+    return lines.slice(1).map((r) => {
       const cols = r.split(',');
       const obj: Record<string, string> = {};
       headers.forEach((h, i) => (obj[h] = (cols[i] ?? '').trim()));
@@ -51,26 +52,15 @@ function pickPhotoKey(row: Record<string, any>) {
   const keys = Object.keys(row || {});
   const exact = keys.find((k) => k.toLowerCase() === 'photo_filename');
   if (exact) return exact;
-  // very loose fallback: look for 'photo' and 'file' together
-  const fuzzy = keys.find(
-    (k) => /photo/i.test(k) && /(file|name)/i.test(k)
-  );
-  return fuzzy ?? keys[0]; // last resort
+  const fuzzy = keys.find((k) => /photo/i.test(k) && /(file|name)/i.test(k));
+  return fuzzy ?? keys[0];
 }
 
 function displayName(row: Record<string, any>) {
   const f =
-    row.first_name ??
-    row.forename ??
-    row.given_name ??
-    row.first ??
-    '';
+    row.first_name ?? row.forename ?? row.given_name ?? row.first ?? '';
   const l =
-    row.last_name ??
-    row.surname ??
-    row.family_name ??
-    row.last ??
-    '';
+    row.last_name ?? row.surname ?? row.family_name ?? row.last ?? '';
   const combined = `${(f || '').toString().trim()} ${(l || '')
     .toString()
     .trim()}`.trim();
@@ -119,15 +109,12 @@ export async function POST(req: Request) {
 
     // --- photos (multi)
     const photos = form.getAll('photos').filter(Boolean) as File[];
-    const uploadedPhotoPaths: string[] = [];
     const photoMap = new Map<string, { path: string; file: string }>(); // key = lower(file)
 
     for (const pf of photos) {
       if (!pf || typeof pf.name !== 'string' || pf.size === 0) continue;
       const dest = `batches/${batch_id}/photos/${pf.name}`;
       await uploadFile(dest, pf);
-      uploadedPhotoPaths.push(dest);
-
       const file = pf.name; // keep original case
       photoMap.set(file.toLowerCase(), { path: dest, file });
     }
@@ -136,28 +123,27 @@ export async function POST(req: Request) {
     const rosterMap = new Map<string, Record<string, string>>();
     if (rosterRows.length) {
       const key = pickPhotoKey(rosterRows[0]);
-      for (const row of rosterRows) {
+      rosterRows.forEach((row) => {
         const fname = (row[key] ?? '').toString().trim();
         if (fname) rosterMap.set(fname.toLowerCase(), row);
-      }
+      });
     }
 
-    // --- match
+    // --- match (use forEach instead of for..of to avoid downlevelIteration)
     const matchedKeys: string[] = [];
     const missingRows: { file: string; row: Record<string, string> }[] = [];
     const orphanPhotoKeys: string[] = [];
 
-    // roster -> photo (who's missing a photo?)
-    for (const [k, row] of rosterMap.entries()) {
+    rosterMap.forEach((row, k) => {
       if (photoMap.has(k)) matchedKeys.push(k);
       else missingRows.push({ file: k, row });
-    }
-    // photo -> roster (photos that have no roster)
-    for (const [k] of photoMap.entries()) {
-      if (!rosterMap.has(k)) orphanPhotoKeys.push(k);
-    }
+    });
 
-    // --- sign URLs for all known photos (use **actual stored paths** to avoid case problems)
+    photoMap.forEach((_v, k) => {
+      if (!rosterMap.has(k)) orphanPhotoKeys.push(k);
+    });
+
+    // --- sign URLs using the actual stored paths (case-safe)
     const pathsToSign: string[] = [];
     matchedKeys.forEach((k) => pathsToSign.push(photoMap.get(k)!.path));
     orphanPhotoKeys.forEach((k) => pathsToSign.push(photoMap.get(k)!.path));
@@ -167,9 +153,7 @@ export async function POST(req: Request) {
       : { data: [] as any[] };
 
     const urlByPath = new Map<string, string>();
-    (signed ?? []).forEach((s, i) => {
-      urlByPath.set(pathsToSign[i], s.signedUrl);
-    });
+    (signed ?? []).forEach((s, i) => urlByPath.set(pathsToSign[i], s.signedUrl));
 
     // assemble previews
     const matchedCards = matchedKeys.map((k) => {
@@ -207,7 +191,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: updErr.message }, { status: 500 });
     }
 
-    // legacy fields kept for compatibility (if you were using them)
     return NextResponse.json({
       ok: true,
       batch_id,
@@ -215,7 +198,6 @@ export async function POST(req: Request) {
       roster_rows: rosterMap.size,
       matched: matchedCards.length,
       missing: missingRows.map((m) => m.file),
-      // new richer structures:
       matchedCards,
       missingRows: missingRows.map((m) => ({
         file: m.file,
