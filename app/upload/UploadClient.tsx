@@ -1,20 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
-type MatchedCard = {
-  file: string;
-  name: string;
-  url: string; // signed URL from API
-};
-
-type MissingRow = {
-  file: string; // expected photo filename
-  name: string; // human name derived from CSV
-  row: Record<string, string>;
-};
-
+type MatchedCard = { file: string; name: string; url: string };
+type MissingRow = { file: string; name: string; row: Record<string, string> };
 type UploadResult = {
   ok: boolean;
   batch_id: string;
@@ -29,22 +19,41 @@ type UploadResult = {
 
 export default function UploadClient() {
   const sp = useSearchParams();
-  const batchIdFromUrl = sp.get('batch_id') || '';
+  const router = useRouter();
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
 
-  const batchId = useMemo(() => batchIdFromUrl, [batchIdFromUrl]);
+  const batchId = useMemo(() => sp.get('batch_id') || '', [sp]);
+
+  async function startNewBatch() {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch('/api/batches/new', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Could not create batch');
+      router.replace(`/upload?batch_id=${json.batch_id}`);
+    } catch (e: any) {
+      setError(e?.message || 'Could not create batch');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!batchId) {
+      setError('Please start a new upload first.');
+      return;
+    }
     setError(null);
     setBusy(true);
     setResult(null);
 
     const fd = new FormData(e.currentTarget);
-    if (batchId) fd.set('batch_id', batchId);
+    fd.set('batch_id', batchId);
 
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
@@ -60,7 +69,6 @@ export default function UploadClient() {
 
   return (
     <div style={{ maxWidth: 980, margin: '0 auto', padding: '24px 16px' }}>
-      {/* Minimal header */}
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 8 }}>
         <a href="/" style={{ fontWeight: 700, textDecoration: 'underline' }}>BadgeFlow</a>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 16 }}>
@@ -73,19 +81,49 @@ export default function UploadClient() {
 
       <h1 style={{ fontSize: 40, fontWeight: 800, margin: '12px 0 16px' }}>Upload order files</h1>
 
-      {!batchId && (
+      {!batchId ? (
+        <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+          <div
+            style={{
+              background: '#eef2ff',
+              border: '1px solid #c7d2fe',
+              color: '#3730a3',
+              padding: '12px 14px',
+              borderRadius: 8,
+            }}
+          >
+            Click “Start new upload” to create a batch, then you can attach your logo, roster and photos.
+          </div>
+          <button
+            onClick={startNewBatch}
+            disabled={busy}
+            style={{
+              width: 240,
+              background: '#4f46e5',
+              color: 'white',
+              fontWeight: 700,
+              padding: '12px 14px',
+              borderRadius: 10,
+              border: 'none',
+              cursor: busy ? 'not-allowed' : 'pointer',
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            {busy ? 'Creating…' : 'Start new upload'}
+          </button>
+        </div>
+      ) : (
         <div
           style={{
-            background: '#fff3cd',
-            color: '#5c4700',
-            border: '1px solid #ffe58f',
-            padding: '12px 14px',
+            background: '#ecfdf5',
+            border: '1px solid #a7f3d0',
+            color: '#065f46',
+            padding: '10px 12px',
             borderRadius: 8,
             marginBottom: 16,
           }}
         >
-          <strong>Heads up:</strong> no <code>batch_id</code> in the URL. Use{' '}
-          <code>/upload?batch_id=&lt;your-batch-id&gt;</code> so the files are linked correctly.
+          Batch ID: <code>{batchId}</code>
         </div>
       )}
 
@@ -95,7 +133,7 @@ export default function UploadClient() {
         <label style={{ fontSize: 20, fontWeight: 700 }}>
           Company logo (PNG/SVG/JPG)
           <div style={{ marginTop: 8 }}>
-            <input type="file" name="logo" accept=".png,.jpg,.jpeg,.svg" />
+            <input type="file" name="logo" accept=".png,.jpg,.jpeg,.svg" disabled={!batchId} />
           </div>
         </label>
 
@@ -106,6 +144,7 @@ export default function UploadClient() {
               type="file"
               name="roster"
               accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+              disabled={!batchId}
             />
           </div>
         </label>
@@ -118,7 +157,7 @@ export default function UploadClient() {
         <label style={{ fontSize: 20, fontWeight: 700 }}>
           Staff photos (JPG/PNG) — you can select multiple
           <div style={{ marginTop: 8 }}>
-            <input type="file" name="photos" accept="image/*" multiple />
+            <input type="file" name="photos" accept="image/*" multiple disabled={!batchId} />
           </div>
         </label>
 
@@ -127,6 +166,7 @@ export default function UploadClient() {
           <textarea
             name="notes"
             placeholder="Anything we should know about this batch?"
+            disabled={!batchId}
             style={{
               display: 'block',
               marginTop: 8,
@@ -155,7 +195,7 @@ export default function UploadClient() {
 
         <button
           type="submit"
-          disabled={busy}
+          disabled={!batchId || busy}
           style={{
             background: '#0f766e',
             color: 'white',
@@ -163,14 +203,15 @@ export default function UploadClient() {
             padding: '14px 16px',
             borderRadius: 10,
             border: 'none',
-            cursor: busy ? 'not-allowed' : 'pointer',
-            opacity: busy ? 0.7 : 1,
+            cursor: !batchId || busy ? 'not-allowed' : 'pointer',
+            opacity: !batchId || busy ? 0.7 : 1,
           }}
         >
           {busy ? 'Uploading…' : 'Upload files'}
         </button>
       </form>
 
+      {/* Your existing summary & previews render here unchanged (result state) */}
       {result && (
         <div style={{ marginTop: 28 }}>
           <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Upload summary</h2>
@@ -181,39 +222,25 @@ export default function UploadClient() {
             <div>Missing: <strong>{result.missing.length}</strong></div>
           </div>
 
-          {/* Matched cards */}
+          {/* Matched */}
           <section style={{ marginTop: 20 }}>
             <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
               Matched cards ({result.matchedCards.length})
             </h3>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                gap: 16,
-              }}
-            >
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
               {result.matchedCards.map((c) => (
                 <CardPreview key={`m-${c.file}`} name={c.name} file={c.file} url={c.url} />
               ))}
             </div>
           </section>
 
-          {/* Missing photo cards */}
+          {/* Missing rows */}
           {result.missingRows.length > 0 && (
             <section style={{ marginTop: 28 }}>
               <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
                 Missing photo for roster rows ({result.missingRows.length})
               </h3>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                  gap: 16,
-                }}
-              >
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
                 {result.missingRows.map((m) => (
                   <CardPreview key={`x-${m.file}`} name={m.name || '(no name)'} file={m.file} url={null} />
                 ))}
@@ -221,20 +248,13 @@ export default function UploadClient() {
             </section>
           )}
 
-          {/* Orphan photos */}
+          {/* Orphans */}
           {result.orphanCards.length > 0 && (
             <section style={{ marginTop: 28 }}>
               <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
                 Photos without a matching roster row ({result.orphanCards.length})
               </h3>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                  gap: 16,
-                }}
-              >
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
                 {result.orphanCards.map((o) => (
                   <CardPreview key={`o-${o.file}`} name="(no roster match)" file={o.file} url={o.url} />
                 ))}
@@ -247,15 +267,7 @@ export default function UploadClient() {
   );
 }
 
-function CardPreview({
-  name,
-  file,
-  url,
-}: {
-  name: string;
-  file: string;
-  url: string | null;
-}) {
+function CardPreview({ name, file, url }: { name: string; file: string; url: string | null }) {
   return (
     <div
       style={{
@@ -276,19 +288,9 @@ function CardPreview({
           {file}
         </div>
       </div>
-
       <div style={{ position: 'relative', background: '#f8fafc' }}>
         {url ? (
-          <img
-            src={url}
-            alt={name}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              display: 'block',
-            }}
-          />
+          <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
           <div
             style={{
