@@ -2,7 +2,32 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-type Preview = { file: string; url: string };
+type Card =
+  | {
+      status: 'matched';
+      file: string;
+      url: string;
+      first_name?: string;
+      last_name?: string;
+      display_name?: string;
+      title?: string;
+      department?: string;
+    }
+  | {
+      status: 'no_roster';
+      file: string;
+      url: string;
+    }
+  | {
+      status: 'missing_photo';
+      file: string;
+      first_name?: string;
+      last_name?: string;
+      display_name?: string;
+      title?: string;
+      department?: string;
+    };
+
 type Summary = {
   ok: boolean;
   batch_id: string;
@@ -10,7 +35,7 @@ type Summary = {
   roster_rows: number;
   matched: number;
   missing: string[];
-  previews: Preview[];
+  cards: Card[];
 };
 
 export default function UploadPage() {
@@ -19,7 +44,7 @@ export default function UploadPage() {
   const [err, setErr] = useState<string | null>(null);
   const [sum, setSum] = useState<Summary | null>(null);
 
-  // auto-create a batch if no ?batch_id= is present
+  // auto-create a batch if none in the URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const existing = params.get('batch_id');
@@ -33,8 +58,7 @@ export default function UploadPage() {
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || 'Failed to start batch');
         params.set('batch_id', j.id);
-        const newUrl = `${location.pathname}?${params.toString()}`;
-        window.history.replaceState({}, '', newUrl);
+        window.history.replaceState({}, '', `${location.pathname}?${params.toString()}`);
         setBatchId(j.id);
       } catch (e: any) {
         setErr(e.message);
@@ -62,29 +86,87 @@ export default function UploadPage() {
     }
   }
 
-  const cardPreviews = useMemo(() => {
-    if (!sum?.previews?.length) return null;
+  function CardPreview(props: { card: Card }) {
+    const c = props.card;
+    const base =
+      'relative flex items-center rounded-xl border bg-white p-4 shadow-sm';
+    const classes =
+      c.status === 'matched'
+        ? base + ' border-emerald-500'
+        : c.status === 'no_roster'
+        ? base + ' border-amber-400'
+        : base + ' border-rose-500';
+
+    const name =
+      'display_name' in c && c.display_name
+        ? c.display_name
+        : ('first_name' in c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : '');
+
     return (
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-        {sum.previews.map((p) => (
-          <div
-            key={p.file}
-            className="flex items-center rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
-            style={{ aspectRatio: '86/54' }} // ID card ratio-ish
-          >
-            <div className="flex-1 pr-4">
-              <div className="text-sm text-gray-500">Preview</div>
-              <div className="mt-1 font-semibold">{p.file}</div>
-              {/* When you parse roster with names, show First Last here */}
-            </div>
-            <img
-              src={p.url}
-              alt={p.file}
-              className="h-full w-28 rounded-md object-cover"
-            />
+      <div className={classes} style={{ aspectRatio: '86/54' }}>
+        {/* left side text */}
+        <div className="flex-1 pr-4">
+          <div className="text-xs uppercase tracking-wide text-gray-500">BadgeFlow</div>
+          <div className="mt-1 text-base font-semibold text-gray-900">
+            {name || (c.status === 'no_roster' ? 'Not in roster' : 'Unknown')}
           </div>
-        ))}
+          {'title' in c && c.title ? (
+            <div className="text-sm text-gray-600">{c.title}</div>
+          ) : null}
+          {'department' in c && c.department ? (
+            <div className="text-sm text-gray-500">{c.department}</div>
+          ) : null}
+          <div className="mt-2 text-xs text-gray-500">{c.file}</div>
+
+          {/* status pill */}
+          <div className="mt-3 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+            style={{
+              background:
+                c.status === 'matched'
+                  ? '#ecfdf5'
+                  : c.status === 'no_roster'
+                  ? '#fffbeb'
+                  : '#fef2f2',
+              color:
+                c.status === 'matched'
+                  ? '#065f46'
+                  : c.status === 'no_roster'
+                  ? '#92400e'
+                  : '#991b1b',
+            }}>
+            {c.status === 'matched' && 'Matched'}
+            {c.status === 'no_roster' && 'Photo only (no roster)'}
+            {c.status === 'missing_photo' && 'Missing photo'}
+          </div>
+        </div>
+
+        {/* right photo or placeholder */}
+        {('url' in c) ? (
+          <img src={c.url} alt={c.file} className="h-full w-28 rounded-md object-cover" />
+        ) : (
+          <div className="flex h-full w-28 items-center justify-center rounded-md bg-gray-100 text-xs text-gray-400">
+            No photo
+          </div>
+        )}
       </div>
+    );
+  }
+
+  const cardGrid = useMemo(() => {
+    if (!sum?.cards?.length) return null;
+    return (
+      <>
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+          {sum.cards.map((c, i) => (
+            <CardPreview key={`${c.status}-${c.file}-${i}`} card={c} />
+          ))}
+        </div>
+
+        {/* legend */}
+        <div className="mt-6 text-xs text-gray-500">
+          <div className="mb-1"><b>Legend:</b> green = matched, amber = photo only, red = roster row missing photo.</div>
+        </div>
+      </>
     );
   }, [sum]);
 
@@ -93,12 +175,7 @@ export default function UploadPage() {
       <h1 className="mb-4 text-3xl font-bold">Upload order files</h1>
 
       {!batchId && <p className="text-gray-500">Preparing your upload…</p>}
-
-      {err && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {err}
-        </div>
-      )}
+      {err && <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{err}</div>}
 
       <form onSubmit={onSubmit} className="space-y-6" encType="multipart/form-data">
         <div>
@@ -110,7 +187,12 @@ export default function UploadPage() {
           <label className="block font-medium">
             Staff roster (CSV/XLSX) — must include a column named <code>photo_filename</code>
           </label>
-          <input name="roster" type="file" accept=".csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="mt-2" />
+          <input
+            name="roster"
+            type="file"
+            accept=".csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            className="mt-2"
+          />
         </div>
 
         <p className="text-sm text-gray-500">
@@ -126,7 +208,12 @@ export default function UploadPage() {
 
         <div>
           <label className="block font-medium">Notes (optional)</label>
-          <textarea name="notes" rows={4} className="mt-2 w-full rounded-md border p-2" placeholder="Anything we should know about this batch?" />
+          <textarea
+            name="notes"
+            rows={4}
+            className="mt-2 w-full rounded-md border p-2"
+            placeholder="Anything we should know about this batch?"
+          />
         </div>
 
         <button
@@ -150,13 +237,15 @@ export default function UploadPage() {
               <details className="mt-2">
                 <summary className="cursor-pointer text-sky-700">Show missing filenames</summary>
                 <ul className="mt-1 list-disc pl-6 text-gray-700">
-                  {sum.missing.map((m) => <li key={m}>{m}</li>)}
+                  {sum.missing.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
                 </ul>
               </details>
             )}
           </div>
 
-          {cardPreviews}
+          {cardGrid}
         </div>
       )}
     </div>
