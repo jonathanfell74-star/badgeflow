@@ -2,7 +2,7 @@
 // /components/IdCardBack.tsx
 import React, { useEffect, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
-import { ID_CARD_THEMES, DEFAULT_THEME_KEY } from '../lib/idCardThemes';
+import { ID_CARD_THEMES, DEFAULT_THEME_KEY } from '@/lib/idCardThemes';
 
 const CARD_W = 336; // on-screen preview width
 const CARD_H = Math.round((2.125 / 3.37) * CARD_W); // CR80 aspect ratio
