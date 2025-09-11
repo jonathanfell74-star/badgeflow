@@ -1,7 +1,7 @@
 'use client';
 // /components/IdCardFront.tsx
 import React from 'react';
-import { ID_CARD_THEMES, DEFAULT_THEME_KEY } from '../lib/idCardThemes';
+import { ID_CARD_THEMES, DEFAULT_THEME_KEY } from '@/lib/idCardThemes';
 
 const CARD_W = 336;
 const CARD_H = Math.round((2.125 / 3.37) * CARD_W);
