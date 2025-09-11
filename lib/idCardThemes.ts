@@ -4,12 +4,12 @@ export type IdCardThemeKey = 'blue' | 'green' | 'red' | 'neutral';
 export type IdCardTheme = {
   key: IdCardThemeKey;
   label: string;
-  bg: string;          // background hex
-  primary: string;     // brand stripe / header
-  secondary: string;   // subtle bg/stripe
-  text: string;        // primary text colour
-  subtext: string;     // secondary text colour
-  border: string;      // border/accent
+  bg: string;
+  primary: string;
+  secondary: string;
+  text: string;
+  subtext: string;
+  border: string;
 };
 
 export const ID_CARD_THEMES: Record<IdCardThemeKey, IdCardTheme> = {
