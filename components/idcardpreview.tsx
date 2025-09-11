@@ -1,9 +1,9 @@
 'use client';
 // /components/IdCardPreview.tsx
 import React from 'react';
-import { ID_CARD_THEMES } from '../lib/idCardThemes';
-import IdCardFront from './IdCardFront';
-import IdCardBack from './IdCardBack';
+import { ID_CARD_THEMES } from '@/lib/idCardThemes';
+import IdCardFront from '@/components/IdCardFront';
+import IdCardBack from '@/components/IdCardBack';
 
 type CardData = {
   employeeId: string;
