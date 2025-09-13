@@ -2,7 +2,7 @@
 // /app/id-cards/page.tsx
 import React, { useState } from 'react';
 import IdCardPreview from './IdCardPreview';
-import { ID_CARD_THEMES } from '@/lib/idCardThemes';
+import { ID_CARD_THEMES, type IdCardThemeKey } from '@/lib/idCardThemes';
 
 const SAMPLE = {
   employeeId: 'E1234',
@@ -16,7 +16,7 @@ const SAMPLE = {
   emergencyContactPhone: '+44 7700 900001',
   bloodType: 'O+',
   allergies: 'None',
-  theme: 'blue' as keyof typeof ID_CARD_THEMES,
+  theme: 'blue' as IdCardThemeKey,
 };
 
 export default function Page() {
