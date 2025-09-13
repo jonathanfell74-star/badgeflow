@@ -1,5 +1,4 @@
 'use client';
-// /app/id-cards/IdCardBack.tsx
 import React, { useEffect, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
 import {
@@ -8,8 +7,9 @@ import {
   type IdCardThemeKey,
 } from '@/lib/idCardThemes';
 
-const CARD_W = 336; // on-screen preview width
-const CARD_H = Math.round((2.125 / 3.37) * CARD_W); // CR80 aspect ratio
+// CR80 dimensions → 85.6mm × 54mm (landscape ratio ≈ 1.585:1)
+const CARD_W = 336;
+const CARD_H = Math.round(CARD_W / 1.585);
 
 type CardData = {
   employeeId: string;
@@ -38,7 +38,7 @@ export default function IdCardBack({ data, className }: Props) {
         fontSize: 10,
         margin: 0,
         width: 2,
-        height: 42,
+        height: 40,
       });
     } catch {
       // ignore
@@ -47,20 +47,14 @@ export default function IdCardBack({ data, className }: Props) {
 
   return (
     <div
-      className={`relative rounded-xl overflow-hidden shadow-sm border ${className ?? ''}`}
-      style={{
-        width: CARD_W,
-        height: CARD_H,
-        background: '#fff',
-        borderColor: theme.border,
-      }}
+      className={`relative rounded-lg overflow-hidden shadow-sm border ${className ?? ''}`}
+      style={{ width: CARD_W, height: CARD_H, background: '#fff', borderColor: theme.border }}
       data-card-side="back"
-      data-employee-id={data.employeeId}
     >
-      {/* Top strip */}
+      {/* Top stripe */}
       <div style={{ background: theme.primary }} className="h-6 w-full" />
 
-      <div className="p-3 h-[calc(100%-1.5rem)] flex flex-col gap-3">
+      <div className="p-3 h-[calc(100%-1.5rem)] flex flex-col gap-2">
         {/* Barcode */}
         <div
           className="border rounded-md p-2 flex items-center justify-center bg-white"
@@ -71,29 +65,17 @@ export default function IdCardBack({ data, className }: Props) {
 
         {/* Emergency info */}
         <div
-          className="text-[11px] leading-5 border rounded-md p-3"
+          className="text-[11px] leading-5 border rounded-md p-2"
           style={{ borderColor: theme.border, background: theme.bg }}
         >
           <div className="font-semibold mb-1" style={{ color: theme.text }}>
             Emergency Information
           </div>
           <div style={{ color: theme.subtext }}>
-            <div>
-              <span className="font-medium" style={{ color: theme.text }}>ICE Contact:</span>{' '}
-              {data.emergencyContactName ?? '—'}
-            </div>
-            <div>
-              <span className="font-medium" style={{ color: theme.text }}>ICE Phone:</span>{' '}
-              {data.emergencyContactPhone ?? '—'}
-            </div>
-            <div>
-              <span className="font-medium" style={{ color: theme.text }}>Blood Type:</span>{' '}
-              {data.bloodType ?? '—'}
-            </div>
-            <div>
-              <span className="font-medium" style={{ color: theme.text }}>Allergies:</span>{' '}
-              {data.allergies ?? '—'}
-            </div>
+            <div><span className="font-medium" style={{ color: theme.text }}>ICE Contact:</span> {data.emergencyContactName ?? '—'}</div>
+            <div><span className="font-medium" style={{ color: theme.text }}>ICE Phone:</span> {data.emergencyContactPhone ?? '—'}</div>
+            <div><span className="font-medium" style={{ color: theme.text }}>Blood Type:</span> {data.bloodType ?? '—'}</div>
+            <div><span className="font-medium" style={{ color: theme.text }}>Allergies:</span> {data.allergies ?? '—'}</div>
           </div>
         </div>
 
@@ -103,7 +85,7 @@ export default function IdCardBack({ data, className }: Props) {
         </div>
       </div>
 
-      {/* Bottom strip */}
+      {/* Bottom stripe */}
       <div className="absolute bottom-0 left-0 right-0 h-[6px]" style={{ background: theme.secondary }} />
     </div>
   );
