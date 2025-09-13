@@ -1,7 +1,7 @@
 'use client';
 // /app/id-cards/page.tsx
 import React, { useState } from 'react';
-import IdCardPreview from '@/components/IdCardPreview';
+import IdCardPreview from './IdCardPreview';
 import { ID_CARD_THEMES } from '@/lib/idCardThemes';
 
 const SAMPLE = {
