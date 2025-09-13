@@ -1,7 +1,11 @@
 'use client';
-// /components/IdCardFront.tsx
+// /components/idcardfront.tsx
 import React from 'react';
-import { ID_CARD_THEMES, DEFAULT_THEME_KEY } from '@/lib/idCardThemes';
+import {
+  ID_CARD_THEMES,
+  DEFAULT_THEME_KEY,
+  type IdCardThemeKey,
+} from '@/lib/idCardThemes';
 
 const CARD_W = 336;
 const CARD_H = Math.round((2.125 / 3.37) * CARD_W);
@@ -14,11 +18,13 @@ type CardData = {
   photoUrl?: string;
   companyName?: string;
   companyLogoUrl?: string;
-  theme?: keyof typeof ID_CARD_THEMES;
+  theme?: IdCardThemeKey;
 };
 
 export default function IdCardFront({ data }: { data: CardData }) {
-  const theme = ID_CARD_THEMES[data.theme ?? (DEFAULT_THEME_KEY as any)];
+  const themeKey: IdCardThemeKey = data.theme ?? DEFAULT_THEME_KEY;
+  const theme = ID_CARD_THEMES[themeKey];
+
   return (
     <div
       className="relative rounded-xl overflow-hidden shadow-sm border"
