@@ -1,7 +1,7 @@
 'use client';
 // /app/id-cards/IdCardPreview.tsx
 import React from 'react';
-import { ID_CARD_THEMES } from '@/lib/idCardThemes';
+import { ID_CARD_THEMES, type IdCardThemeKey } from '@/lib/idCardThemes';
 import IdCardFront from './IdCardFront';
 import IdCardBack from './IdCardBack';
 
@@ -13,7 +13,7 @@ type CardData = {
   photoUrl?: string;
   companyName?: string;
   companyLogoUrl?: string;
-  theme?: keyof typeof ID_CARD_THEMES;
+  theme?: IdCardThemeKey;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   bloodType?: string;
@@ -25,16 +25,18 @@ export default function IdCardPreview({
   onThemeChange,
 }: {
   data: CardData;
-  onThemeChange?: (k: keyof typeof ID_CARD_THEMES) => void;
+  onThemeChange?: (k: IdCardThemeKey) => void;
 }) {
+  const currentTheme: IdCardThemeKey = data.theme ?? 'blue';
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <label className="text-sm">Theme:</label>
         <select
           className="border px-2 py-1 rounded"
-          value={data.theme ?? 'blue'}
-          onChange={(e) => onThemeChange?.(e.target.value as keyof typeof ID_CARD_THEMES)}
+          value={currentTheme}
+          onChange={(e) => onThemeChange?.(e.target.value as IdCardThemeKey)}
         >
           {Object.values(ID_CARD_THEMES).map((t) => (
             <option key={t.key} value={t.key}>
