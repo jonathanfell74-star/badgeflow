@@ -8,7 +8,7 @@ import {
 
 // CR80 dimensions → 85.6mm × 54mm (landscape ratio ≈ 1.585:1)
 const CARD_W = 336; // preview width
-const CARD_H = Math.round(CARD_W / 1.585); // keep ratio exact
+const CARD_H = Math.round(CARD_W / 1.585);
 
 type CardData = {
   employeeId: string;
@@ -27,8 +27,13 @@ export default function IdCardFront({ data }: { data: CardData }) {
 
   return (
     <div
-      className="relative rounded-lg overflow-hidden shadow-sm border"
-      style={{ width: CARD_W, height: CARD_H, background: theme.bg, borderColor: theme.border }}
+      className="relative rounded-lg overflow-hidden border shadow-lg"
+      style={{
+        width: CARD_W,
+        height: CARD_H,
+        background: theme.bg,
+        borderColor: theme.border,
+      }}
       data-card-side="front"
     >
       {/* Top stripe */}
