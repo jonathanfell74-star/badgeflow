@@ -1,8 +1,12 @@
 'use client';
-// /components/IdCardBack.tsx
+// /components/idcardback.tsx
 import React, { useEffect, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
-import { ID_CARD_THEMES, DEFAULT_THEME_KEY } from '@/lib/idCardThemes';
+import {
+  ID_CARD_THEMES,
+  DEFAULT_THEME_KEY,
+  type IdCardThemeKey,
+} from '@/lib/idCardThemes';
 
 const CARD_W = 336; // on-screen preview width
 const CARD_H = Math.round((2.125 / 3.37) * CARD_W); // CR80 aspect ratio
@@ -10,7 +14,7 @@ const CARD_H = Math.round((2.125 / 3.37) * CARD_W); // CR80 aspect ratio
 type CardData = {
   employeeId: string;
   companyName?: string;
-  theme?: keyof typeof ID_CARD_THEMES;
+  theme?: IdCardThemeKey;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   bloodType?: string;
@@ -20,7 +24,9 @@ type CardData = {
 type Props = { data: CardData; className?: string };
 
 export default function IdCardBack({ data, className }: Props) {
-  const theme = ID_CARD_THEMES[data.theme ?? (DEFAULT_THEME_KEY as any)];
+  const themeKey: IdCardThemeKey = data.theme ?? DEFAULT_THEME_KEY;
+  const theme = ID_CARD_THEMES[themeKey];
+
   const barcodeRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
