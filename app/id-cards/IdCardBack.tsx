@@ -47,8 +47,13 @@ export default function IdCardBack({ data, className }: Props) {
 
   return (
     <div
-      className={`relative rounded-lg overflow-hidden shadow-sm border ${className ?? ''}`}
-      style={{ width: CARD_W, height: CARD_H, background: '#fff', borderColor: theme.border }}
+      className={`relative rounded-lg overflow-hidden border shadow-lg ${className ?? ''}`}
+      style={{
+        width: CARD_W,
+        height: CARD_H,
+        background: '#fff',
+        borderColor: theme.border,
+      }}
       data-card-side="back"
     >
       {/* Top stripe */}
