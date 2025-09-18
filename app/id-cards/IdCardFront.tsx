@@ -6,9 +6,9 @@ import {
   type IdCardThemeKey,
 } from '@/lib/idCardThemes';
 
-// CR80 dimensions → 85.6mm × 54mm (landscape ratio ≈ 1.585:1)
-const CARD_W = 336; // preview width
-const CARD_H = Math.round(CARD_W / 1.585);
+// CR80: 85.6mm × 54mm -> ratio ≈ 1.585 (landscape)
+const CARD_W = 336;                    // on-screen width
+const CARD_H = Math.round(CARD_W / 1.585); // ≈ 212px
 
 type CardData = {
   employeeId: string;
@@ -27,61 +27,90 @@ export default function IdCardFront({ data }: { data: CardData }) {
 
   return (
     <div
-      className="relative rounded-lg overflow-hidden border shadow-lg"
+      className="relative rounded-[12px] overflow-hidden border shadow-xl"
       style={{
         width: CARD_W,
         height: CARD_H,
         background: theme.bg,
         borderColor: theme.border,
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
       }}
       data-card-side="front"
     >
-      {/* Top stripe */}
-      <div style={{ background: theme.primary }} className="h-6 w-full" />
+      {/* Header band */}
+      <div className="absolute inset-x-0 top-0 h-8" style={{ background: theme.primary }} />
+      {/* Footer accent */}
+      <div className="absolute inset-x-0 bottom-0 h-2" style={{ background: theme.secondary }} />
 
-      <div className="p-3 flex gap-3 h-[calc(100%-1.5rem)]">
-        {/* Photo box */}
-        <div
-          className="w-20 h-full bg-white/70 border rounded-md overflow-hidden flex items-center justify-center"
-          style={{ borderColor: theme.border }}
-        >
-          {data.photoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={data.photoUrl} alt={data.name} className="w-full h-full object-cover" />
-          ) : (
-            <div className="text-xs text-gray-500">No Photo</div>
-          )}
-        </div>
-
-        {/* Info */}
-        <div className="flex-1 flex flex-col">
-          <div className="flex items-center gap-2">
-            {data.companyLogoUrl ? (
+      {/* Content area */}
+      <div className="absolute inset-0 pt-8 pb-2 px-10">
+        <div className="h-full grid grid-cols-[92px_1fr] gap-12 items-center">
+          {/* Photo box */}
+          <div
+            className="relative h-[120px] w-[92px] rounded-md border bg-white/70 overflow-hidden"
+            style={{ borderColor: theme.border }}
+          >
+            {data.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={data.companyLogoUrl} alt={data.companyName ?? 'Company'} className="h-5 object-contain" />
+              <img
+                src={data.photoUrl}
+                alt={data.name}
+                className="absolute inset-0 w-full h-full object-cover"
+                onError={(e) => ((e.currentTarget.style.display = 'none'))}
+              />
             ) : (
-              <span className="text-[11px] font-medium text-gray-500">{data.companyName ?? 'Company'}</span>
+              <div className="flex h-full w-full items-center justify-center text-[11px] text-gray-500">
+                Photo
+              </div>
             )}
           </div>
-          <div className="mt-1 text-base font-semibold" style={{ color: theme.text }}>
-            {data.name}
-          </div>
-          <div className="text-[11px]" style={{ color: theme.subtext }}>
-            {data.title ?? 'Staff'}{data.department ? ` • ${data.department}` : ''}
-          </div>
-          <div className="mt-auto">
-            <div
-              className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] border"
-              style={{ background: theme.secondary, borderColor: theme.border, color: theme.text }}
-            >
-              ID: {data.employeeId}
+
+          {/* Text block */}
+          <div className="flex h-full flex-col">
+            {/* Company row */}
+            <div className="flex items-center gap-2 h-5">
+              {data.companyLogoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={data.companyLogoUrl}
+                  alt={data.companyName ?? 'Company'}
+                  className="h-5 object-contain"
+                  onError={(e) => ((e.currentTarget.style.display = 'none'))}
+                />
+              ) : (
+                <span className="text-[11px] font-medium text-gray-500">
+                  {data.companyName ?? 'Company'}
+                </span>
+              )}
+            </div>
+
+            {/* Name */}
+            <div className="mt-1 text-[20px] font-semibold leading-6" style={{ color: theme.text }}>
+              {data.name}
+            </div>
+
+            {/* Title / Dept */}
+            <div className="mt-0.5 text-[12px] leading-5" style={{ color: theme.subtext }}>
+              {data.title ?? 'Staff'}
+              {data.department ? ` • ${data.department}` : ''}
+            </div>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* ID chip */}
+            <div>
+              <span
+                className="inline-flex items-center rounded-md border px-2 py-1 text-[11px] leading-none"
+                style={{ background: theme.secondary, borderColor: theme.border, color: theme.text }}
+              >
+                ID: {data.employeeId}
+              </span>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Bottom stripe */}
-      <div className="absolute bottom-0 left-0 right-0 h-[6px]" style={{ background: theme.secondary }} />
     </div>
   );
 }
