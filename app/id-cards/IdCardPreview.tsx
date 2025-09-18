@@ -1,5 +1,4 @@
 'use client';
-// /app/id-cards/IdCardPreview.tsx
 import React from 'react';
 import { ID_CARD_THEMES, type IdCardThemeKey } from '@/lib/idCardThemes';
 import IdCardFront from './IdCardFront';
@@ -46,9 +45,12 @@ export default function IdCardPreview({
         </select>
       </div>
 
-      <div className="flex gap-4">
-        <IdCardFront data={data as any} />
-        <IdCardBack data={data as any} />
+      {/* Preview surface with subtle bg so shadows pop */}
+      <div className="rounded-xl bg-gray-50 p-6">
+        <div className="flex flex-wrap items-start gap-6">
+          <IdCardFront data={data as any} />
+          <IdCardBack data={data as any} />
+        </div>
       </div>
     </div>
   );
