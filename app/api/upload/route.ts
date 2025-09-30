@@ -129,7 +129,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // --- match (use forEach instead of for..of to avoid downlevelIteration)
+    // --- match
     const matchedKeys: string[] = [];
     const missingRows: { file: string; row: Record<string, string> }[] = [];
     const orphanPhotoKeys: string[] = [];
@@ -148,12 +148,19 @@ export async function POST(req: Request) {
     matchedKeys.forEach((k) => pathsToSign.push(photoMap.get(k)!.path));
     orphanPhotoKeys.forEach((k) => pathsToSign.push(photoMap.get(k)!.path));
 
-    const { data: signed } = pathsToSign.length
-      ? await supabase.storage.from(BUCKET).createSignedUrls(pathsToSign, 600)
-      : { data: [] as any[] };
+    const { data: signed, error: signErr } = pathsToSign.length
+      ? await supabase.storage.from(BUCKET).createSignedUrls(pathsToSign, 3600) // 1 hour
+      : { data: [] as any[], error: null };
+
+    if (signErr) {
+      // Don’t fail the whole request—return structure without URLs
+      console.warn('sign error', signErr.message);
+    }
 
     const urlByPath = new Map<string, string>();
-    (signed ?? []).forEach((s, i) => urlByPath.set(pathsToSign[i], s.signedUrl));
+    (signed ?? []).forEach((s, i) => {
+      if (s?.signedUrl) urlByPath.set(pathsToSign[i], s.signedUrl);
+    });
 
     // assemble previews
     const matchedCards = matchedKeys.map((k) => {
