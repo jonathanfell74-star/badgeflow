@@ -258,7 +258,7 @@ export default function UploadClient() {
   );
 }
 
-/** CR80 ID card preview (85.6 × 54 mm) */
+/** CR80 ID card preview (85.6 × 54 mm) with robust image fallback */
 function IDCard({
   name,
   subline,
@@ -272,12 +272,16 @@ function IDCard({
   logoUrl?: string | null;
   badge?: { text: string; color: 'emerald' | 'red' | 'yellow' };
 }) {
+  const [imgFailed, setImgFailed] = useState(false);
+
   const badgeClass =
     badge?.color === 'emerald'
       ? 'bg-emerald-100 text-emerald-800'
       : badge?.color === 'red'
       ? 'bg-rose-100 text-rose-800'
       : 'bg-amber-100 text-amber-800';
+
+  const showPlaceholder = !imgUrl || imgFailed;
 
   return (
     <div
@@ -305,8 +309,9 @@ function IDCard({
             {logoUrl ? (
               <img
                 src={logoUrl}
-                alt="logo"
+                alt=""
                 className="h-4 w-4 rounded-sm object-contain ring-1 ring-white/30"
+                referrerPolicy="no-referrer"
               />
             ) : (
               <div className="h-4 w-4 rounded-sm bg-sky-600" />
@@ -322,28 +327,42 @@ function IDCard({
           {subline && (
             <div className="truncate text-[12px] text-slate-500">{subline}</div>
           )}
-
-          {/* Optional extra fields could go here later (role, dept, ID number) */}
         </div>
 
         {/* Right: photo (or placeholder) */}
         <div className="overflow-hidden rounded-md ring-1 ring-slate-200">
-          {imgUrl ? (
-            <img
-              src={imgUrl}
-              alt={name}
-              className="h-full w-full object-cover"
-            />
-          ) : (
+          {showPlaceholder ? (
             <div className="flex h-full w-full items-center justify-center bg-slate-50">
               <div className="flex flex-col items-center text-slate-400">
                 <div className="mb-1 h-10 w-10 rounded-full border-2 border-dashed border-slate-300" />
                 <div className="text-[11px]">no image</div>
               </div>
             </div>
+          ) : (
+            <img
+              src={imgUrl!}
+              alt=""               // avoid alt text showing if image fails
+              className="h-full w-full object-cover"
+              loading="lazy"
+              crossOrigin="anonymous"
+              referrerPolicy="no-referrer"
+              onError={() => setImgFailed(true)}
+            />
           )}
         </div>
       </div>
+
+      {/* Tiny debug link so you can test the actual signed URL */}
+      {!showPlaceholder && imgUrl && (
+        <a
+          href={imgUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="absolute bottom-2 right-2 text-[10px] text-slate-500 underline"
+        >
+          Open photo
+        </a>
+      )}
     </div>
   );
 }
