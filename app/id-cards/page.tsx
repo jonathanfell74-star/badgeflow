@@ -1,291 +1,132 @@
 "use client";
 
-/**
- * BadgeFlow — ID Cards page with LIVE data + Batch PDF Export
- *
- * How it finds data (first match wins):
- * 1) URL query ?batchId=XXXX  → fetches from Supabase (adjust mapping below if column names differ)
- * 2) localStorage "badgeflow_people" → JSON array of { id, name, role, department, photoUrl }
- *
- * Requires env:
- *  - NEXT_PUBLIC_SUPABASE_URL
- *  - NEXT_PUBLIC_SUPABASE_ANON_KEY
- *
- * Uses your existing IdCardPreview component and exports:
- *  - A4 fronts PDF
- *  - A4 backs PDF
- *  - ZIP of single-card PDFs (front+back per person)
- */
-
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
-import IdCardPreview from "@/components/IdCardPreview"; // ⬅️ your real preview component
-import {
-  Person,
-  CARD_PX,
-  CARD_PT,
-  makeA4SheetPdfs,
-  makeSinglesZip,
-  pngDataUrlFromNode
-} from "@/lib/pdfExport";
-
-/** ---------- Supabase setup ---------- */
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase =
-  SUPABASE_URL && SUPABASE_ANON ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+import { PDFDocument } from "pdf-lib";
+import * as htmlToImage from "html-to-image";
 
 /**
- * Edit this mapping to match your view/table shape.
- * We assume a view of "public.matches_view" with the columns below,
- * but the code simply remaps whatever you return.
+ * BadgeFlow – Simple Test Page
+ * Press one button to make printable PDFs.
  */
-type Row = {
-  employee_id: string;
-  full_name: string;
-  role?: string | null;
-  department?: string | null;
-  photo_url?: string | null;
-};
 
-function mapRowToPerson(r: Row): Person {
-  return {
-    id: r.employee_id,
-    name: r.full_name,
-    role: r.role ?? undefined,
-    department: r.department ?? undefined,
-    photoUrl: r.photo_url ?? undefined
-  };
-}
+export default function TestCards() {
+  // Three pretend people just to test the export
+  const people = [
+    { id: "E1234", name: "Alex Smith", role: "Engineer" },
+    { id: "E5678", name: "Jen Nguyen", role: "Supervisor" },
+    { id: "E9012", name: "Chris Taylor", role: "Analyst" },
+  ];
 
-/** Fetch from Supabase by batchId (adjust table/view + filters to your schema) */
-async function fetchPeopleByBatchId(batchId: string): Promise<Person[]> {
-  if (!supabase) return [];
-  // Example: a materialized view "matches_view" keyed by batch_id
-  const { data, error } = await supabase
-    .from("matches_view")
-    .select("employee_id, full_name, role, department, photo_url")
-    .eq("batch_id", batchId)
-    .order("full_name", { ascending: true });
+  const [making, setMaking] = useState(false);
+  const hiddenRef = useRef<HTMLDivElement>(null);
 
-  if (error) {
-    // eslint-disable-next-line no-console
-    console.error("Supabase fetch error:", error);
-    return [];
-  }
-  return (data as Row[]).map(mapRowToPerson);
-}
+  // A CR80 card is 85.6 mm × 54 mm → about 242 × 153 points
+  const cardSize = { w: 242, h: 153 };
 
-/** Try multiple data sources in order: URL ?batchId=..., then localStorage */
-function usePeople(): { people: Person[]; loading: boolean; source: string } {
-  const [people, setPeople] = useState<Person[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<string>("");
-
-  useEffect(() => {
-    let isMounted = true;
-
-    (async () => {
-      setLoading(true);
-
-      // 1) ?batchId=...
-      const params = new URLSearchParams(window.location.search);
-      const batchId = params.get("batchId");
-      if (batchId) {
-        const live = await fetchPeopleByBatchId(batchId);
-        if (isMounted && live.length) {
-          setPeople(live);
-          setSource(`supabase:batchId=${batchId}`);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // 2) localStorage fallback
-      try {
-        const raw = localStorage.getItem("badgeflow_people");
-        if (raw) {
-          const arr = JSON.parse(raw) as Person[];
-          if (isMounted && Array.isArray(arr) && arr.length) {
-            setPeople(arr);
-            setSource("localStorage:badgeflow_people");
-            setLoading(false);
-            return;
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-
-      // Nothing found → empty
-      if (isMounted) {
-        setPeople([]);
-        setSource("none");
-        setLoading(false);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  return { people, loading, source };
-}
-
-/** ------------- Page ------------- */
-export default function IdCardsPage() {
-  const { people, loading, source } = usePeople();
-  const [exporting, setExporting] = useState<string | null>(null);
-
-  // Hidden export container (exact 300-DPI pixel box per side)
-  const exportRef = useRef<HTMLDivElement>(null);
-
-  // Create the flat render list: [p1-front, p1-back, p2-front, p2-back, ...]
-  const renderTargets = useMemo(
+  // For export we draw both sides for each person
+  const renderList = useMemo(
     () =>
       people.flatMap((p) => [
-        { key: `${p.id}_front`, person: p, side: "front" as const },
-        { key: `${p.id}_back`, person: p, side: "back" as const }
+        { key: p.id + "_front", person: p, side: "front" },
+        { key: p.id + "_back", person: p, side: "back" },
       ]),
     [people]
   );
 
-  const doExport = useCallback(async () => {
-    if (!exportRef.current) return;
-    if (!people.length) {
-      alert("No people to export yet.");
-      return;
+  /** makes one A4 PDF of all cards */
+  async function makePdf(images: string[], label: string) {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([595, 842]); // A4 portrait
+    let x = 40,
+      y = 842 - 180; // start near top
+    for (let i = 0; i < images.length; i++) {
+      const imgBytes = await fetch(images[i]).then((r) => r.arrayBuffer());
+      const img = await doc.embedPng(imgBytes);
+      page.drawImage(img, { x, y, width: cardSize.w, height: cardSize.h });
+      x += cardSize.w + 10;
+      if (x + cardSize.w > 595) {
+        x = 40;
+        y -= cardSize.h + 10;
+      }
     }
+    const bytes = await doc.save();
+    saveAs(new Blob([bytes], { type: "application/pdf" }), `BadgeFlow_${label}.pdf`);
+  }
 
-    setExporting("Rendering images…");
+  const handleExport = useCallback(async () => {
+    if (!hiddenRef.current) return;
+    setMaking(true);
 
-    const nodes = Array.from(
-      exportRef.current.querySelectorAll<HTMLElement>("[data-card-node='1']")
-    );
-
+    const nodes = hiddenRef.current.querySelectorAll("[data-card]");
     const fronts: string[] = [];
     const backs: string[] = [];
 
     for (let i = 0; i < nodes.length; i += 2) {
-      const frontNode = nodes[i];
-      const backNode = nodes[i + 1];
-
-      const frontDataUrl = await pngDataUrlFromNode(frontNode);
-      const backDataUrl = await pngDataUrlFromNode(backNode);
-
-      fronts.push(frontDataUrl);
-      backs.push(backDataUrl);
+      const f = (await htmlToImage.toPng(nodes[i] as HTMLElement)) as string;
+      const b = (await htmlToImage.toPng(nodes[i + 1] as HTMLElement)) as string;
+      fronts.push(f);
+      backs.push(b);
     }
 
-    setExporting("Composing A4 PDFs…");
-    const { frontBlob, backBlob } = await makeA4SheetPdfs(fronts, backs);
-    saveAs(frontBlob, "badgeflow_A4_fronts.pdf");
-    saveAs(backBlob, "badgeflow_A4_backs.pdf");
+    await makePdf(fronts, "Fronts");
+    await makePdf(backs, "Backs");
 
-    setExporting("Building single-card PDFs (zip)…");
-    const zipBlob = await makeSinglesZip(fronts, backs, people);
-    saveAs(zipBlob, "badgeflow_single_cards.zip");
-
-    setExporting(null);
-    alert("Export complete ✅  (A4 Fronts + A4 Backs + Singles ZIP)");
-  }, [people]);
+    setMaking(false);
+    alert("All done! 🎉  Check your downloads folder.");
+  }, []);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">BadgeFlow — ID Cards & PDF Export</h1>
-        <div className="text-xs text-gray-500">
-          Data source: <span className="font-mono">{loading ? "loading…" : source}</span>
-        </div>
-      </div>
+    <div style={{ padding: 30 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 600 }}>BadgeFlow – Test Export</h1>
+      <p style={{ marginTop: 8 }}>Click the button below to make sample PDFs.</p>
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={doExport}
-          disabled={!!exporting || loading || people.length === 0}
-          className="rounded-xl px-4 py-2 bg-black text-white disabled:opacity-50"
-        >
-          {exporting ?? "Export PDFs"}
-        </button>
-        <p className="text-sm text-gray-500">
-          Creates A4 sheets (fronts & backs) and a ZIP of single-card PDFs.
-        </p>
-      </div>
-
-      {/* Quick visual check — show first person front/back at true card size */}
-      {people.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="max-w-sm">
-            <div
-              style={{
-                width: CARD_PT.w,
-                height: CARD_PT.h,
-                border: "1px dashed #e5e7eb",
-                background: "#fff"
-              }}
-            >
-              <IdCardPreview person={people[0]} side="front" />
-            </div>
-            <div className="text-xs text-gray-500 mt-2">CR80 preview (front)</div>
-          </div>
-          <div className="max-w-sm">
-            <div
-              style={{
-                width: CARD_PT.w,
-                height: CARD_PT.h,
-                border: "1px dashed #e5e7eb",
-                background: "#fff"
-              }}
-            >
-              <IdCardPreview person={people[0]} side="back" />
-            </div>
-            <div className="text-xs text-gray-500 mt-2">CR80 preview (back)</div>
-          </div>
-        </div>
-      )}
-
-      {(!loading && people.length === 0) && (
-        <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-          No people found. Load via <code>?batchId=YOUR_BATCH_ID</code> (Supabase) or set{" "}
-          <code>localStorage.badgeflow_people</code> to a JSON array of{" "}
-          <code>{`{ id, name, role?, department?, photoUrl? }`}</code>.
-        </div>
-      )}
-
-      {/* Hidden 300-DPI render stage — this is what actually gets rasterized */}
-      <div
-        ref={exportRef}
+      <button
+        onClick={handleExport}
+        disabled={making}
         style={{
-          position: "absolute",
-          left: -99999,
-          top: 0,
-          width: 0,
-          height: 0,
-          overflow: "hidden"
+          marginTop: 20,
+          background: "black",
+          color: "white",
+          padding: "10px 20px",
+          borderRadius: 8,
+          fontSize: 16,
         }}
       >
-        {renderTargets.map(({ key, person, side }) => (
+        {making ? "Working…" : "Export PDFs"}
+      </button>
+
+      {/* Hidden 1-to-1 cards for export */}
+      <div
+        ref={hiddenRef}
+        style={{ position: "absolute", left: -9999, top: 0, width: 0, height: 0 }}
+      >
+        {renderList.map(({ key, person, side }) => (
           <div
             key={key}
-            data-card-node="1"
+            data-card
             style={{
-              width: `${CARD_PX.w}px`,
-              height: `${CARD_PX.h}px`,
-              display: "block",
-              background: "#ffffff"
+              width: 1011, // 300 DPI true size
+              height: 638,
+              background: "#fff",
+              border: "1px solid #ddd",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: "sans-serif",
+              fontSize: 20,
             }}
           >
-            {/* Your real preview component must fill its parent (100%/100%) and avoid outer shadows/margins */}
-            <IdCardPreview person={person} side={side} />
+            {side === "front" ? (
+              <div>
+                <strong>{person.name}</strong>
+                <div>{person.role}</div>
+              </div>
+            ) : (
+              <div>Back of card for {person.name}</div>
+            )}
           </div>
         ))}
-      </div>
-
-      <div className="text-sm text-gray-600 leading-6">
-        <strong>Print spec:</strong> CR80 85.6×54.0 mm (3.370×2.125 in) at 300-DPI (1011×638 px). Cards are placed at true
-        physical size (242.64×153 pt) on A4 (595×842 pt). For duplex printing, print the two PDFs in order.
       </div>
     </div>
   );
