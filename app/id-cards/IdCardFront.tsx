@@ -6,9 +6,9 @@ import {
   type IdCardThemeKey,
 } from '@/lib/idCardThemes';
 
-// CR80: 85.6mm × 54mm -> ratio ≈ 1.585 (landscape)
-const CARD_W = 336;                    // on-screen width
-const CARD_H = Math.round(CARD_W / 1.585); // ≈ 212px
+// CR80 ratio (landscape): 85.6×54mm ≈ 1.585
+const CARD_W = 336;
+const CARD_H = Math.round(CARD_W / 1.585);
 
 type CardData = {
   employeeId: string;
@@ -27,83 +27,107 @@ export default function IdCardFront({ data }: { data: CardData }) {
 
   return (
     <div
-      className="relative rounded-[12px] overflow-hidden border shadow-xl"
+      data-card-side="front"
       style={{
         width: CARD_W,
         height: CARD_H,
+        borderRadius: 12,
+        overflow: 'hidden',
+        position: 'relative',
         background: theme.bg,
-        borderColor: theme.border,
+        border: `1px solid ${theme.border}`,
+        boxShadow: '0 10px 24px rgba(0,0,0,0.12)', // inline shadow to ensure “float”
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
       }}
-      data-card-side="front"
     >
-      {/* Header band */}
-      <div className="absolute inset-x-0 top-0 h-8" style={{ background: theme.primary }} />
-      {/* Footer accent */}
-      <div className="absolute inset-x-0 bottom-0 h-2" style={{ background: theme.secondary }} />
+      {/* header & footer accents */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 32, background: theme.primary }} />
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 8, background: theme.secondary }} />
 
-      {/* Content area */}
-      <div className="absolute inset-0 pt-8 pb-2 px-10">
-        <div className="h-full grid grid-cols-[92px_1fr] gap-12 items-center">
-          {/* Photo box */}
+      {/* content */}
+      <div style={{ position: 'absolute', inset: 0, padding: '32px 40px 8px 40px' }}>
+        <div
+          style={{
+            height: '100%',
+            display: 'grid',
+            gridTemplateColumns: '92px 1fr',
+            gap: 32,
+            alignItems: 'center',
+          }}
+        >
+          {/* photo */}
           <div
-            className="relative h-[120px] w-[92px] rounded-md border bg-white/70 overflow-hidden"
-            style={{ borderColor: theme.border }}
+            style={{
+              width: 92,
+              height: 120,
+              borderRadius: 8,
+              border: `1px solid ${theme.border}`,
+              background: '#ffffffb3',
+              position: 'relative',
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              color: '#6b7280',
+            }}
           >
             {data.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={data.photoUrl}
                 alt={data.name}
-                className="absolute inset-0 w-full h-full object-cover"
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
                 onError={(e) => ((e.currentTarget.style.display = 'none'))}
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-[11px] text-gray-500">
-                Photo
-              </div>
+              'Photo'
             )}
           </div>
 
-          {/* Text block */}
-          <div className="flex h-full flex-col">
-            {/* Company row */}
-            <div className="flex items-center gap-2 h-5">
+          {/* info */}
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 20 }}>
               {data.companyLogoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={data.companyLogoUrl}
                   alt={data.companyName ?? 'Company'}
-                  className="h-5 object-contain"
+                  style={{ height: 20, objectFit: 'contain' }}
                   onError={(e) => ((e.currentTarget.style.display = 'none'))}
                 />
               ) : (
-                <span className="text-[11px] font-medium text-gray-500">
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#6b7280' }}>
                   {data.companyName ?? 'Company'}
                 </span>
               )}
             </div>
 
-            {/* Name */}
-            <div className="mt-1 text-[20px] font-semibold leading-6" style={{ color: theme.text }}>
+            <div style={{ marginTop: 4, fontSize: 20, fontWeight: 600, lineHeight: '24px', color: theme.text }}>
               {data.name}
             </div>
 
-            {/* Title / Dept */}
-            <div className="mt-0.5 text-[12px] leading-5" style={{ color: theme.subtext }}>
+            <div style={{ marginTop: 2, fontSize: 12, lineHeight: '20px', color: theme.subtext }}>
               {data.title ?? 'Staff'}
               {data.department ? ` • ${data.department}` : ''}
             </div>
 
-            {/* Spacer */}
-            <div className="flex-1" />
+            <div style={{ flex: 1 }} />
 
-            {/* ID chip */}
             <div>
               <span
-                className="inline-flex items-center rounded-md border px-2 py-1 text-[11px] leading-none"
-                style={{ background: theme.secondary, borderColor: theme.border, color: theme.text }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  borderRadius: 6,
+                  padding: '6px 8px',
+                  fontSize: 11,
+                  lineHeight: 1,
+                  background: theme.secondary,
+                  border: `1px solid ${theme.border}`,
+                  color: theme.text,
+                }}
               >
                 ID: {data.employeeId}
               </span>
