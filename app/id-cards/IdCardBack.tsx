@@ -7,7 +7,6 @@ import {
   type IdCardThemeKey,
 } from '@/lib/idCardThemes';
 
-// CR80 ratio
 const CARD_W = 336;
 const CARD_H = Math.round(CARD_W / 1.585);
 
@@ -32,17 +31,13 @@ export default function IdCardBack({ data, className }: Props) {
   useEffect(() => {
     if (!barcodeRef.current || !data.employeeId) return;
     try {
-      // target visual width ~80% of card width
-      const barWidth = 1.6; // thickness of each bar (px)
-      const barHeight = 44;
-
       JsBarcode(barcodeRef.current, data.employeeId, {
         format: 'CODE128',
         displayValue: true,
         fontSize: 10,
         margin: 0,
-        width: barWidth,
-        height: barHeight,
+        width: 1.6,
+        height: 44,
       });
     } catch {
       // ignore
@@ -51,61 +46,63 @@ export default function IdCardBack({ data, className }: Props) {
 
   return (
     <div
-      className={`relative rounded-[12px] overflow-hidden border shadow-xl ${className ?? ''}`}
+      data-card-side="back"
       style={{
         width: CARD_W,
         height: CARD_H,
+        borderRadius: 12,
+        overflow: 'hidden',
+        position: 'relative',
         background: '#fff',
-        borderColor: theme.border,
+        border: `1px solid ${theme.border}`,
+        boxShadow: '0 10px 24px rgba(0,0,0,0.12)',
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
       }}
-      data-card-side="back"
     >
-      {/* Header / footer accents */}
-      <div className="absolute inset-x-0 top-0 h-8" style={{ background: theme.primary }} />
-      <div className="absolute inset-x-0 bottom-0 h-2" style={{ background: theme.secondary }} />
+      {/* header/footer accents */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 32, background: theme.primary }} />
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 8, background: theme.secondary }} />
 
-      {/* Content */}
-      <div className="absolute inset-0 pt-8 pb-2 px-10">
-        <div className="flex h-full flex-col gap-3">
-          {/* Barcode area */}
+      {/* content */}
+      <div style={{ position: 'absolute', inset: 0, padding: '32px 40px 8px 40px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
+          {/* barcode box */}
           <div
-            className="border rounded-md bg-white flex items-center justify-center p-2"
-            style={{ borderColor: theme.border }}
+            style={{
+              border: `1px solid ${theme.border}`,
+              borderRadius: 8,
+              background: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 8,
+            }}
           >
             <svg ref={barcodeRef} />
           </div>
 
-          {/* Emergency info */}
+          {/* emergency info */}
           <div
-            className="rounded-md border p-3 text-[12px] leading-5"
-            style={{ borderColor: theme.border, background: theme.bg, color: theme.subtext }}
+            style={{
+              border: `1px solid ${theme.border}`,
+              borderRadius: 8,
+              background: theme.bg,
+              padding: 10,
+              fontSize: 12,
+              lineHeight: '20px',
+              color: theme.subtext,
+            }}
           >
-            <div className="mb-1 text-[12px] font-semibold" style={{ color: theme.text }}>
-              Emergency Information
-            </div>
-            <div>
-              <span className="font-medium" style={{ color: theme.text }}>ICE Contact:</span>{' '}
-              {data.emergencyContactName ?? '—'}
-            </div>
-            <div>
-              <span className="font-medium" style={{ color: theme.text }}>ICE Phone:</span>{' '}
-              {data.emergencyContactPhone ?? '—'}
-            </div>
-            <div>
-              <span className="font-medium" style={{ color: theme.text }}>Blood Type:</span>{' '}
-              {data.bloodType ?? '—'}
-            </div>
-            <div>
-              <span className="font-medium" style={{ color: theme.text }}>Allergies:</span>{' '}
-              {data.allergies ?? '—'}
-            </div>
+            <div style={{ marginBottom: 4, fontWeight: 600, color: theme.text }}>Emergency Information</div>
+            <div><span style={{ fontWeight: 600, color: theme.text }}>ICE Contact:</span> {data.emergencyContactName ?? '—'}</div>
+            <div><span style={{ fontWeight: 600, color: theme.text }}>ICE Phone:</span> {data.emergencyContactPhone ?? '—'}</div>
+            <div><span style={{ fontWeight: 600, color: theme.text }}>Blood Type:</span> {data.bloodType ?? '—'}</div>
+            <div><span style={{ fontWeight: 600, color: theme.text }}>Allergies:</span> {data.allergies ?? '—'}</div>
           </div>
 
-          {/* Spacer + footer note */}
-          <div className="flex-1" />
-          <div className="text-center text-[10px] text-gray-500">
+          <div style={{ flex: 1 }} />
+          <div style={{ textAlign: 'center', fontSize: 10, color: '#6b7280' }}>
             If found, please return to {data.companyName ?? 'Company'} • ID #{data.employeeId}
           </div>
         </div>
