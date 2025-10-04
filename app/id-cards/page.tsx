@@ -9,7 +9,7 @@ const SAMPLE = {
   title: 'Operations Manager',
   department: 'Ops',
   companyName: 'BadgeFlow',
-  companyLogoUrl: '/logo-badgeflow.svg',
+  companyLogoUrl: '/logo-badgeflow.jpg',
   photoUrl: '/sample/alex.jpg',
   emergencyContactName: 'Sam Smith',
   emergencyContactPhone: '+44 7700 900001',
