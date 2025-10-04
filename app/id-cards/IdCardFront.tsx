@@ -6,7 +6,7 @@ import {
   type IdCardThemeKey,
 } from '@/lib/idCardThemes';
 
-// CR80 ratio (landscape): 85.6×54mm ≈ 1.585
+// CR80: 85.6mm × 54mm -> ratio ≈ 1.585 (landscape)
 const CARD_W = 336;
 const CARD_H = Math.round(CARD_W / 1.585);
 
@@ -36,12 +36,12 @@ export default function IdCardFront({ data }: { data: CardData }) {
         position: 'relative',
         background: theme.bg,
         border: `1px solid ${theme.border}`,
-        boxShadow: '0 10px 24px rgba(0,0,0,0.12)', // inline shadow to ensure “float”
+        boxShadow: '0 10px 24px rgba(0,0,0,0.12)',
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
       }}
     >
-      {/* header & footer accents */}
+      {/* header/footer accents */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 32, background: theme.primary }} />
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 8, background: theme.secondary }} />
 
@@ -51,16 +51,16 @@ export default function IdCardFront({ data }: { data: CardData }) {
           style={{
             height: '100%',
             display: 'grid',
-            gridTemplateColumns: '92px 1fr',
-            gap: 32,
+            gridTemplateColumns: '100px 1fr',
+            gap: 28,
             alignItems: 'center',
           }}
         >
           {/* photo */}
           <div
             style={{
-              width: 92,
-              height: 120,
+              width: 100,
+              height: 128,
               borderRadius: 8,
               border: `1px solid ${theme.border}`,
               background: '#ffffffb3',
@@ -88,27 +88,28 @@ export default function IdCardFront({ data }: { data: CardData }) {
 
           {/* info */}
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 20 }}>
+            {/* bigger logo row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 28 }}>
               {data.companyLogoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={data.companyLogoUrl}
                   alt={data.companyName ?? 'Company'}
-                  style={{ height: 20, objectFit: 'contain' }}
+                  style={{ height: 28, maxWidth: 160, objectFit: 'contain' }}
                   onError={(e) => ((e.currentTarget.style.display = 'none'))}
                 />
               ) : (
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#6b7280' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>
                   {data.companyName ?? 'Company'}
                 </span>
               )}
             </div>
 
-            <div style={{ marginTop: 4, fontSize: 20, fontWeight: 600, lineHeight: '24px', color: theme.text }}>
+            <div style={{ marginTop: 4, fontSize: 22, fontWeight: 700, lineHeight: '26px', color: theme.text }}>
               {data.name}
             </div>
 
-            <div style={{ marginTop: 2, fontSize: 12, lineHeight: '20px', color: theme.subtext }}>
+            <div style={{ marginTop: 4, fontSize: 12.5, lineHeight: '20px', color: theme.subtext }}>
               {data.title ?? 'Staff'}
               {data.department ? ` • ${data.department}` : ''}
             </div>
@@ -120,8 +121,8 @@ export default function IdCardFront({ data }: { data: CardData }) {
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  borderRadius: 6,
-                  padding: '6px 8px',
+                  borderRadius: 8,
+                  padding: '6px 10px',
                   fontSize: 11,
                   lineHeight: 1,
                   background: theme.secondary,
