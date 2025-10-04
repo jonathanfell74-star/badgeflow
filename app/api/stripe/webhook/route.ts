@@ -1,48 +1,67 @@
-import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { createClient } from "@supabase/supabase-js";
+import { headers } from "next/headers";
+import { NextResponse } from "next/server";
 
-export const runtime = "nodejs"; // use Node, not Edge
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
-  const raw = await req.text();
-  const sig = req.headers.get("stripe-signature");
-  const whsec = process.env.STRIPE_WEBHOOK_SECRET;
-  const sk = process.env.STRIPE_SECRET_KEY;
+// Env vars needed in Vercel:
+// - STRIPE_SECRET_KEY
+// - STRIPE_WEBHOOK_SECRET  (from your Stripe dashboard → Developers → Webhooks)
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
+  apiVersion: "2024-06-20",
+});
 
-  if (!sig || !whsec || !sk) {
-    return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+export async function POST(req: Request) {
+  const sig = headers().get("stripe-signature");
+  if (!sig) {
+    return new NextResponse("Missing Stripe-Signature header", { status: 400 });
   }
 
-  const stripe = new Stripe(sk, { apiVersion: "2024-06-20" as any });
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error("Missing STRIPE_WEBHOOK_SECRET env var");
+    return new NextResponse("Server misconfigured", { status: 500 });
+  }
 
   let event: Stripe.Event;
+
   try {
-    event = stripe.webhooks.constructEvent(raw, sig, whsec);
+    // IMPORTANT: use the raw text body for signature verification
+    const rawBody = await req.text();
+    event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
   } catch (err: any) {
-    return NextResponse.json({ error: `Signature verify failed: ${err.message}` }, { status: 400 });
-  }
-
-  if (event.type === "checkout.session.completed") {
-    const s = event.data.object as Stripe.Checkout.Session;
-    const md = (s.metadata || {}) as Record<string,string>;
-
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE! // server-only key
-    );
-
-    const { error } = await supabase.from("orders").insert({
-      stripe_session_id: s.id,
-      quantity: parseInt(md.quantity || "0", 10),
-      wallet_addon: md.wallet === "true",
-      amount_total_cents: s.amount_total || 0,
-      cutoff_result: md.cutoff_result || null,
-      dispatch_target: md.dispatch_target || null,
-      status: "paid"
+    console.error("Stripe webhook signature verification failed:", err?.message);
+    return new NextResponse(`Webhook Error: ${err?.message ?? "invalid signature"}`, {
+      status: 400,
     });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ received: true });
+  try {
+    // Handle the events you care about
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        // TODO: fulfill the order, mark payment complete, etc.
+        console.log("✅ checkout.session.completed:", session.id, session.metadata);
+        break;
+      }
+      case "invoice.paid":
+        console.log("✅ invoice.paid");
+        break;
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted":
+        console.log(`ℹ️ ${event.type}`);
+        break;
+      default:
+        console.log(`Unhandled event type ${event.type}`);
+    }
+
+    // Respond quickly — Stripe only needs a 2xx to consider it delivered
+    return new NextResponse("ok", { status: 200 });
+  } catch (err: any) {
+    console.error("Webhook handler error:", err);
+    return new NextResponse("Webhook handler error", { status: 500 });
+  }
 }
