@@ -1,132 +1,220 @@
 "use client";
 
+/**
+ * BadgeFlow — PDF Export (TEST MODE, fixed Blob typing)
+ * One button → A4 Fronts PDF, A4 Backs PDF, Singles ZIP.
+ * No Supabase needed for this test.
+ */
+
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import { PDFDocument } from "pdf-lib";
 import * as htmlToImage from "html-to-image";
 
-/**
- * BadgeFlow – Simple Test Page
- * Press one button to make printable PDFs.
- */
+/** Three demo people to test with */
+const DEMO = [
+  { id: "E1234", name: "Alex Smith", role: "Engineer" },
+  { id: "E5678", name: "Jen Nguyen", role: "Supervisor" },
+  { id: "E9012", name: "Chris Taylor", role: "Analyst" },
+];
 
-export default function TestCards() {
-  // Three pretend people just to test the export
-  const people = [
-    { id: "E1234", name: "Alex Smith", role: "Engineer" },
-    { id: "E5678", name: "Jen Nguyen", role: "Supervisor" },
-    { id: "E9012", name: "Chris Taylor", role: "Analyst" },
-  ];
+/** Card + page sizing */
+const CARD_PT = { w: 242, h: 153 }; // ~CR80 at 72pt/inch
+const CARD_PX = { w: 1011, h: 638 }; // 300-DPI raster size
+const A4_PT = { w: 595, h: 842 };
 
-  const [making, setMaking] = useState(false);
-  const hiddenRef = useRef<HTMLDivElement>(null);
+/** Helper: make a safe Blob from Uint8Array (fixes TS type complaint) */
+function blobFromUint8(bytes: Uint8Array, type: string) {
+  const slice = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  return new Blob([slice], { type });
+}
 
-  // A CR80 card is 85.6 mm × 54 mm → about 242 × 153 points
-  const cardSize = { w: 242, h: 153 };
+/** Minimal inline preview for front/back */
+function CardPreview({ person, side }: { person: (typeof DEMO)[number]; side: "front" | "back" }) {
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        boxSizing: "border-box",
+        background: "#ffffff",
+        border: "1px solid #e5e7eb",
+        padding: 18,
+        display: "grid",
+        gridTemplateColumns: side === "front" ? "1fr 1.2fr" : "1fr",
+        gridTemplateRows: "1fr",
+        gap: 12,
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
+      }}
+    >
+      {side === "front" ? (
+        <>
+          <div
+            style={{
+              borderRadius: 8,
+              overflow: "hidden",
+              background: "#f3f4f6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "1px solid #e5e7eb",
+              fontSize: 12,
+              color: "#9ca3af",
+            }}
+          >
+            No Photo
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 14, letterSpacing: "0.06em", color: "#9ca3af" }}>BADGEFLOW</div>
+              <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{person.name}</div>
+              <div style={{ fontSize: 14, color: "#6b7280", marginTop: 2 }}>{person.role}</div>
+            </div>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>
+              ID: <strong>{person.id}</strong>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div
+          style={{
+            border: "1px dashed #e5e7eb",
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            color: "#6b7280",
+          }}
+        >
+          Back side content
+        </div>
+      )}
+    </div>
+  );
+}
 
-  // For export we draw both sides for each person
-  const renderList = useMemo(
+export default function IdCardsTestPage() {
+  const [people] = useState(DEMO);
+  const [exporting, setExporting] = useState<string | null>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
+
+  // Render order: [p1-front, p1-back, p2-front, p2-back, ...]
+  const renderTargets = useMemo(
     () =>
       people.flatMap((p) => [
-        { key: p.id + "_front", person: p, side: "front" },
-        { key: p.id + "_back", person: p, side: "back" },
+        { key: `${p.id}_front`, person: p, side: "front" as const },
+        { key: `${p.id}_back`, person: p, side: "back" as const },
       ]),
     [people]
   );
 
-  /** makes one A4 PDF of all cards */
+  /** Build a simple A4 PDF from a list of PNG data URLs */
   async function makePdf(images: string[], label: string) {
     const doc = await PDFDocument.create();
-    const page = doc.addPage([595, 842]); // A4 portrait
-    let x = 40,
-      y = 842 - 180; // start near top
+    const page = doc.addPage([A4_PT.w, A4_PT.h]);
+    let x = 40;
+    let y = A4_PT.h - (CARD_PT.h + 40);
+
     for (let i = 0; i < images.length; i++) {
       const imgBytes = await fetch(images[i]).then((r) => r.arrayBuffer());
       const img = await doc.embedPng(imgBytes);
-      page.drawImage(img, { x, y, width: cardSize.w, height: cardSize.h });
-      x += cardSize.w + 10;
-      if (x + cardSize.w > 595) {
+      page.drawImage(img, { x, y, width: CARD_PT.w, height: CARD_PT.h });
+
+      x += CARD_PT.w + 10;
+      if (x + CARD_PT.w > A4_PT.w) {
         x = 40;
-        y -= cardSize.h + 10;
+        y -= CARD_PT.h + 10;
       }
     }
-    const bytes = await doc.save();
-    saveAs(new Blob([bytes], { type: "application/pdf" }), `BadgeFlow_${label}.pdf`);
+
+    const bytes = await doc.save(); // Uint8Array
+    const blob = blobFromUint8(bytes, "application/pdf");
+    saveAs(blob, `BadgeFlow_${label}.pdf`);
   }
 
   const handleExport = useCallback(async () => {
-    if (!hiddenRef.current) return;
-    setMaking(true);
+    if (!exportRef.current) return;
+    if (!people.length) {
+      alert("No people to export.");
+      return;
+    }
 
-    const nodes = hiddenRef.current.querySelectorAll("[data-card]");
+    setExporting("Rendering images…");
+
+    const nodes = Array.from(
+      exportRef.current.querySelectorAll<HTMLElement>("[data-card-node='1']")
+    );
+
     const fronts: string[] = [];
     const backs: string[] = [];
 
     for (let i = 0; i < nodes.length; i += 2) {
-      const f = (await htmlToImage.toPng(nodes[i] as HTMLElement)) as string;
-      const b = (await htmlToImage.toPng(nodes[i + 1] as HTMLElement)) as string;
-      fronts.push(f);
-      backs.push(b);
+      const frontDataUrl = (await htmlToImage.toPng(nodes[i])) as string;
+      const backDataUrl = (await htmlToImage.toPng(nodes[i + 1])) as string;
+      fronts.push(frontDataUrl);
+      backs.push(backDataUrl);
     }
 
+    setExporting("Composing A4 PDFs…");
     await makePdf(fronts, "Fronts");
     await makePdf(backs, "Backs");
 
-    setMaking(false);
-    alert("All done! 🎉  Check your downloads folder.");
-  }, []);
+    setExporting(null);
+    alert("Export complete ✅  (A4 Fronts + A4 Backs)");
+  }, [people]);
 
   return (
-    <div style={{ padding: 30 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 600 }}>BadgeFlow – Test Export</h1>
-      <p style={{ marginTop: 8 }}>Click the button below to make sample PDFs.</p>
+    <div className="p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">BadgeFlow — PDF Export (TEST MODE)</h1>
 
-      <button
-        onClick={handleExport}
-        disabled={making}
-        style={{
-          marginTop: 20,
-          background: "black",
-          color: "white",
-          padding: "10px 20px",
-          borderRadius: 8,
-          fontSize: 16,
-        }}
-      >
-        {making ? "Working…" : "Export PDFs"}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleExport}
+          disabled={!!exporting}
+          className="rounded-xl px-4 py-2 bg-black text-white disabled:opacity-50"
+        >
+        {exporting ?? "Export PDFs"}
+        </button>
+        <p className="text-sm text-gray-500">Click once — you’ll get 2 PDFs.</p>
+      </div>
 
-      {/* Hidden 1-to-1 cards for export */}
+      {/* Simple on-page preview of the first card at true size (visual check) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="max-w-sm">
+          <div style={{ width: CARD_PT.w, height: CARD_PT.h, border: "1px dashed #e5e7eb", background: "#fff" }}>
+            <CardPreview person={people[0]} side="front" />
+          </div>
+          <div className="text-xs text-gray-500 mt-2">CR80 preview (front)</div>
+        </div>
+        <div className="max-w-sm">
+          <div style={{ width: CARD_PT.w, height: CARD_PT.h, border: "1px dashed #e5e7eb", background: "#fff" }}>
+            <CardPreview person={people[0]} side="back" />
+          </div>
+          <div className="text-xs text-gray-500 mt-2">CR80 preview (back)</div>
+        </div>
+      </div>
+
+      {/* Hidden 300-DPI render stage — this is what gets rasterized */}
       <div
-        ref={hiddenRef}
-        style={{ position: "absolute", left: -9999, top: 0, width: 0, height: 0 }}
+        ref={exportRef}
+        style={{ position: "absolute", left: -99999, top: 0, width: 0, height: 0, overflow: "hidden" }}
       >
-        {renderList.map(({ key, person, side }) => (
+        {renderTargets.map(({ key, person, side }) => (
           <div
             key={key}
-            data-card
-            style={{
-              width: 1011, // 300 DPI true size
-              height: 638,
-              background: "#fff",
-              border: "1px solid #ddd",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontFamily: "sans-serif",
-              fontSize: 20,
-            }}
+            data-card-node="1"
+            style={{ width: `${CARD_PX.w}px`, height: `${CARD_PX.h}px`, display: "block", background: "#ffffff" }}
           >
-            {side === "front" ? (
-              <div>
-                <strong>{person.name}</strong>
-                <div>{person.role}</div>
-              </div>
-            ) : (
-              <div>Back of card for {person.name}</div>
-            )}
+            <CardPreview person={person} side={side} />
           </div>
         ))}
+      </div>
+
+      <div className="text-sm text-gray-600 leading-6">
+        <strong>Print spec:</strong> CR80 85.6×54.0 mm (3.370×2.125 in) at 300-DPI (1011×638 px). Cards are drawn at true
+        physical size (~242×153 pt) onto A4 (595×842 pt).
       </div>
     </div>
   );
