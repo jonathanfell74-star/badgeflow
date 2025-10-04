@@ -25,9 +25,8 @@ export default function IdCardFront({ data }: { data: CardData }) {
   const themeKey: IdCardThemeKey = data.theme ?? DEFAULT_THEME_KEY;
   const theme = ID_CARD_THEMES[themeKey];
 
-  // Tweak here if you ever want bigger/smaller logos globally
-  const LOGO_HEIGHT = 36;   // was 28
-  const LOGO_MAX_W  = 220;  // was 160
+  const LOGO_HEIGHT = 36;
+  const LOGO_MAX_W = 220;
 
   return (
     <div
@@ -35,12 +34,14 @@ export default function IdCardFront({ data }: { data: CardData }) {
       style={{
         width: CARD_W,
         height: CARD_H,
-        borderRadius: 12,
+        borderRadius: 16,
         overflow: 'hidden',
         position: 'relative',
         background: theme.bg,
         border: `1px solid ${theme.border}`,
-        boxShadow: '0 10px 24px rgba(0,0,0,0.12)`,
+        // softer, realistic drop shadow (no big rectangle behind)
+        boxShadow:
+          '0 18px 45px rgba(0,0,0,0.18), 0 6px 14px rgba(0,0,0,0.10)',
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
       }}
@@ -65,9 +66,9 @@ export default function IdCardFront({ data }: { data: CardData }) {
             style={{
               width: 100,
               height: 128,
-              borderRadius: 8,
+              borderRadius: 12,
               border: `1px solid ${theme.border}`,
-              background: '#ffffffb3',
+              background: '#ffffff',
               position: 'relative',
               overflow: 'hidden',
               display: 'flex',
@@ -92,18 +93,13 @@ export default function IdCardFront({ data }: { data: CardData }) {
 
           {/* info */}
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            {/* bigger, more flexible logo row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: LOGO_HEIGHT }}>
               {data.companyLogoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={data.companyLogoUrl}
                   alt={data.companyName ?? 'Company'}
-                  style={{
-                    height: LOGO_HEIGHT,
-                    maxWidth: LOGO_MAX_W,
-                    objectFit: 'contain',
-                  }}
+                  style={{ height: LOGO_HEIGHT, maxWidth: LOGO_MAX_W, objectFit: 'contain' }}
                   onError={(e) => ((e.currentTarget.style.display = 'none'))}
                 />
               ) : (
@@ -128,7 +124,7 @@ export default function IdCardFront({ data }: { data: CardData }) {
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  borderRadius: 8,
+                  borderRadius: 10,
                   padding: '6px 10px',
                   fontSize: 11,
                   lineHeight: 1,
