@@ -54,13 +54,11 @@ export const POSITIONS = calculateCellPositions();
 
 /** Convert a DOM node (sized to CARD_PX) into a PNG data URL */
 export async function pngDataUrlFromNode(node: HTMLElement): Promise<string> {
-  // Lazy import to keep this module tree-shakeable and avoid SSR import issues
   const htmlToImage = await import("html-to-image");
   return htmlToImage.toPng(node, {
-    pixelRatio: 1, // node is already sized to exact pixel box
+    pixelRatio: 1,
     cacheBust: true,
-    backgroundColor: "#ffffff",
-    // style: { transform: "translateZ(0)" }, // sometimes helps on Safari
+    backgroundColor: "#ffffff"
   });
 }
 
@@ -88,7 +86,7 @@ export async function makeA4SheetPdfs(fronts: string[], backs: string[]) {
           x: 16,
           y: A4_PT.h - 16,
           size: 8,
-          font,
+          font
         });
       }
       const pngBytes = await fetch(images[i]).then((r) => r.arrayBuffer());
@@ -130,17 +128,4 @@ export async function makeSinglesZip(
       const page = doc.addPage([CARD_PT.w, CARD_PT.h]);
       const pngBytes = await fetch(dataUrl).then((r) => r.arrayBuffer());
       const embedded = await doc.embedPng(pngBytes);
-      page.drawImage(embedded, { x: 0, y: 0, width: CARD_PT.w, height: CARD_PT.h });
-    };
-
-    if (fronts[i]) await addSide(fronts[i]);
-    if (backs[i]) await addSide(backs[i]);
-
-    const bytes = await doc.save();
-    const safeName = `${p.id}_${p.name.replace(/\s+/g, "_")}.pdf`;
-    zip.file(safeName, bytes);
-  }
-
-  const blob = await zip.generateAsync({ type: "blob" });
-  return blob;
-}
+      page.drawImage(embedded, { x: 0, y: 0, width: CARD_PT.w, height: CARD_PT.h }
