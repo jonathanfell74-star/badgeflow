@@ -29,14 +29,19 @@ export default function IdCardPreview({
   const currentTheme: IdCardThemeKey = data.theme ?? 'blue';
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
-      {/* theme row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <label style={{ fontSize: 14 }}>Theme:</label>
+    <div style={{ display: 'grid', gap: 14 }}>
+      {/* Theme control */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <label style={{ fontSize: 16 }}>Theme:</label>
         <select
           value={currentTheme}
           onChange={(e) => onThemeChange?.(e.target.value as IdCardThemeKey)}
-          style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: '4px 8px' }}
+          style={{
+            border: '1px solid #D1D5DB',
+            borderRadius: 10,
+            padding: '8px 12px',
+            fontSize: 16,
+          }}
         >
           {Object.values(ID_CARD_THEMES).map((t) => (
             <option key={t.key} value={t.key}>
@@ -46,26 +51,17 @@ export default function IdCardPreview({
         </select>
       </div>
 
-      {/* preview surface */}
+      {/* Cards: side-by-side, no background panel */}
       <div
         style={{
-          background: '#F9FAFB',
-          border: '1px solid #e5e7eb',
-          borderRadius: 12,
-          padding: 16,
+          display: 'flex',
+          gap: 26,
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            gap: 16,
-            alignItems: 'flex-start',
-            flexWrap: 'wrap',
-          }}
-        >
-          <IdCardFront data={data as any} />
-          <IdCardBack data={data as any} />
-        </div>
+        <IdCardFront data={data as any} />
+        <IdCardBack data={data as any} />
       </div>
     </div>
   );
