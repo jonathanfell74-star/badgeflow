@@ -1,5 +1,4 @@
 'use client';
-// /app/id-cards/page.tsx
 import React, { useState } from 'react';
 import IdCardPreview from './IdCardPreview';
 import { ID_CARD_THEMES, type IdCardThemeKey } from '@/lib/idCardThemes';
@@ -23,13 +22,10 @@ export default function Page() {
   const [card, setCard] = useState(SAMPLE);
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">ID Card Preview</h1>
-      <div className="bg-white border rounded-xl p-4">
-        <IdCardPreview
-          data={card}
-          onThemeChange={(k) => setCard((c) => ({ ...c, theme: k }))}
-        />
+    <div style={{ maxWidth: 960, margin: '0 auto', padding: 24 }}>
+      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 12 }}>ID Card Preview</h1>
+      <div style={{ background: '#fff' }}>
+        <IdCardPreview data={card} onThemeChange={(k) => setCard((c) => ({ ...c, theme: k }))} />
       </div>
     </div>
   );
