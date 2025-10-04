@@ -1,143 +1,142 @@
 "use client";
 
 /**
- * BadgeFlow — ID Cards page with Batch PDF Export
- * - Renders hidden card nodes at exact 300-DPI pixel dimensions (CR80).
- * - Exports A4 fronts/backs PDFs and a ZIP of single-card PDFs.
+ * BadgeFlow — ID Cards page with LIVE data + Batch PDF Export
  *
- * Replace the demo people with your matched roster result.
- * If you have an existing IdCardPreview component, swap the inline <CardPreview/> with yours.
+ * How it finds data (first match wins):
+ * 1) URL query ?batchId=XXXX  → fetches from Supabase (adjust mapping below if column names differ)
+ * 2) localStorage "badgeflow_people" → JSON array of { id, name, role, department, photoUrl }
+ *
+ * Requires env:
+ *  - NEXT_PUBLIC_SUPABASE_URL
+ *  - NEXT_PUBLIC_SUPABASE_ANON_KEY
+ *
+ * Uses your existing IdCardPreview component and exports:
+ *  - A4 fronts PDF
+ *  - A4 backs PDF
+ *  - ZIP of single-card PDFs (front+back per person)
  */
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import { saveAs } from "file-saver";
+import IdCardPreview from "@/components/IdCardPreview"; // ⬅️ your real preview component
 import {
   Person,
   CARD_PX,
   CARD_PT,
   makeA4SheetPdfs,
   makeSinglesZip,
-  pngDataUrlFromNode,
+  pngDataUrlFromNode
 } from "@/lib/pdfExport";
 
-/** ===== Demo data — replace with your roster/match results ===== */
-const PEOPLE: Person[] = [
-  { id: "E1234", name: "Alex Smith", role: "Engineer", department: "R&D", photoUrl: "/alex.jpg" },
-  { id: "E5678", name: "Jen Nguyen", role: "Supervisor", department: "Ops", photoUrl: "/jen.jpg" },
-  { id: "E9012", name: "Chris Taylor", role: "Analyst", department: "Finance", photoUrl: "/chris.jpg" }
-];
+/** ---------- Supabase setup ---------- */
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase =
+  SUPABASE_URL && SUPABASE_ANON ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 
-/** ===== Simple inline card preview (front/back) — swap with your own if you have one ===== */
-function CardPreview({
-  person,
-  side = "front",
-}: {
-  person: Person;
-  side: "front" | "back";
-}) {
-  // This keeps a clean, printer-friendly export. No outer shadows/margins!
-  return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        boxSizing: "border-box",
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        padding: "18px",
-        display: "grid",
-        gridTemplateColumns: side === "front" ? "1fr 1.2fr" : "1fr",
-        gridTemplateRows: "1fr",
-        gap: "12px",
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
-      }}
-    >
-      {side === "front" ? (
-        <>
-          {/* Photo block */}
-          <div
-            style={{
-              borderRadius: "8px",
-              overflow: "hidden",
-              background: "#f3f4f6",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "1px solid #e5e7eb",
-            }}
-          >
-            {person.photoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={person.photoUrl}
-                alt={person.name}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-            ) : (
-              <div style={{ fontSize: 12, color: "#9ca3af" }}>No Photo</div>
-            )}
-          </div>
+/**
+ * Edit this mapping to match your view/table shape.
+ * We assume a view of "public.matches_view" with the columns below,
+ * but the code simply remaps whatever you return.
+ */
+type Row = {
+  employee_id: string;
+  full_name: string;
+  role?: string | null;
+  department?: string | null;
+  photo_url?: string | null;
+};
 
-          {/* Details */}
-          <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: 14, letterSpacing: "0.06em", color: "#9ca3af" }}>BADGEFLOW</div>
-              <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{person.name}</div>
-              <div style={{ fontSize: 14, color: "#6b7280", marginTop: 2 }}>
-                {person.role || "Team Member"}{person.department ? ` · ${person.department}` : ""}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 6,
-                  background: "#111827",
-                }}
-              />
-              <div style={{ fontSize: 12, color: "#6b7280" }}>
-                ID: <strong>{person.id}</strong>
-              </div>
-            </div>
-          </div>
-        </>
-      ) : (
-        // Back side — placeholder for barcode, terms, contact, etc.
-        <div
-          style={{
-            display: "grid",
-            gridTemplateRows: "auto 1fr auto",
-            height: "100%",
-          }}
-        >
-          <div style={{ fontSize: 14, letterSpacing: "0.06em", color: "#9ca3af" }}>BADGEFLOW</div>
-          <div
-            style={{
-              border: "1px dashed #e5e7eb",
-              borderRadius: 8,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 12,
-              color: "#6b7280",
-            }}
-          >
-            Back side content (barcode/NFC info/RTW text)
-          </div>
-          <div style={{ fontSize: 10, color: "#9ca3af" }}>
-            If found, please return to your company’s security desk.
-          </div>
-        </div>
-      )}
-    </div>
-  );
+function mapRowToPerson(r: Row): Person {
+  return {
+    id: r.employee_id,
+    name: r.full_name,
+    role: r.role ?? undefined,
+    department: r.department ?? undefined,
+    photoUrl: r.photo_url ?? undefined
+  };
 }
 
+/** Fetch from Supabase by batchId (adjust table/view + filters to your schema) */
+async function fetchPeopleByBatchId(batchId: string): Promise<Person[]> {
+  if (!supabase) return [];
+  // Example: a materialized view "matches_view" keyed by batch_id
+  const { data, error } = await supabase
+    .from("matches_view")
+    .select("employee_id, full_name, role, department, photo_url")
+    .eq("batch_id", batchId)
+    .order("full_name", { ascending: true });
+
+  if (error) {
+    // eslint-disable-next-line no-console
+    console.error("Supabase fetch error:", error);
+    return [];
+  }
+  return (data as Row[]).map(mapRowToPerson);
+}
+
+/** Try multiple data sources in order: URL ?batchId=..., then localStorage */
+function usePeople(): { people: Person[]; loading: boolean; source: string } {
+  const [people, setPeople] = useState<Person[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState<string>("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      setLoading(true);
+
+      // 1) ?batchId=...
+      const params = new URLSearchParams(window.location.search);
+      const batchId = params.get("batchId");
+      if (batchId) {
+        const live = await fetchPeopleByBatchId(batchId);
+        if (isMounted && live.length) {
+          setPeople(live);
+          setSource(`supabase:batchId=${batchId}`);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 2) localStorage fallback
+      try {
+        const raw = localStorage.getItem("badgeflow_people");
+        if (raw) {
+          const arr = JSON.parse(raw) as Person[];
+          if (isMounted && Array.isArray(arr) && arr.length) {
+            setPeople(arr);
+            setSource("localStorage:badgeflow_people");
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // Nothing found → empty
+      if (isMounted) {
+        setPeople([]);
+        setSource("none");
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  return { people, loading, source };
+}
+
+/** ------------- Page ------------- */
 export default function IdCardsPage() {
-  const [people] = useState<Person[]>(PEOPLE);
+  const { people, loading, source } = usePeople();
   const [exporting, setExporting] = useState<string | null>(null);
 
   // Hidden export container (exact 300-DPI pixel box per side)
@@ -148,127 +147,16 @@ export default function IdCardsPage() {
     () =>
       people.flatMap((p) => [
         { key: `${p.id}_front`, person: p, side: "front" as const },
-        { key: `${p.id}_back`, person: p, side: "back" as const },
+        { key: `${p.id}_back`, person: p, side: "back" as const }
       ]),
     [people]
   );
 
   const doExport = useCallback(async () => {
     if (!exportRef.current) return;
-
-    setExporting("Rendering images…");
-
-    // Query nodes in DOM order
-    const nodes = Array.from(
-      exportRef.current.querySelectorAll<HTMLElement>("[data-card-node='1']")
-    );
-
-    const fronts: string[] = [];
-    const backs: string[] = [];
-
-    for (let i = 0; i < nodes.length; i += 2) {
-      const frontNode = nodes[i];
-      const backNode = nodes[i + 1];
-
-      const frontDataUrl = await pngDataUrlFromNode(frontNode);
-      const backDataUrl = await pngDataUrlFromNode(backNode);
-
-      fronts.push(frontDataUrl);
-      backs.push(backDataUrl);
+    if (!people.length) {
+      alert("No people to export yet.");
+      return;
     }
 
-    setExporting("Composing A4 PDFs…");
-    const { frontBlob, backBlob } = await makeA4SheetPdfs(fronts, backs);
-    saveAs(frontBlob, "badgeflow_A4_fronts.pdf");
-    saveAs(backBlob, "badgeflow_A4_backs.pdf");
-
-    setExporting("Building single-card PDFs (zip)…");
-    const zipBlob = await makeSinglesZip(fronts, backs, people);
-    saveAs(zipBlob, "badgeflow_single_cards.zip");
-
-    setExporting(null);
-    alert("Export complete ✅  (A4 Fronts + A4 Backs + Singles ZIP)");
-  }, [people]);
-
-  return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">BadgeFlow — ID Cards & PDF Export</h1>
-
-      <div className="flex items-center gap-3">
-        <button
-          onClick={doExport}
-          disabled={!!exporting}
-          className="rounded-xl px-4 py-2 bg-black text-white disabled:opacity-50"
-        >
-          {exporting ?? "Export PDFs"}
-        </button>
-        <p className="text-sm text-gray-500">
-          Creates A4 sheets (fronts & backs) and a ZIP of single-card PDFs.
-        </p>
-      </div>
-
-      {/* Optional: simple on-page preview of the first card (not used for export) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="max-w-sm">
-          <div
-            style={{
-              width: CARD_PT.w,
-              height: CARD_PT.h,
-              border: "1px dashed #e5e7eb",
-              background: "#fff",
-            }}
-          >
-            <CardPreview person={people[0]} side="front" />
-          </div>
-          <div className="text-xs text-gray-500 mt-2">CR80 preview (front)</div>
-        </div>
-        <div className="max-w-sm">
-          <div
-            style={{
-              width: CARD_PT.w,
-              height: CARD_PT.h,
-              border: "1px dashed #e5e7eb",
-              background: "#fff",
-            }}
-          >
-            <CardPreview person={people[0]} side="back" />
-          </div>
-          <div className="text-xs text-gray-500 mt-2">CR80 preview (back)</div>
-        </div>
-      </div>
-
-      {/* Hidden 300-DPI render stage — this is what actually gets rasterized */}
-      <div
-        ref={exportRef}
-        style={{
-          position: "absolute",
-          left: -99999,
-          top: 0,
-          width: 0,
-          height: 0,
-          overflow: "hidden",
-        }}
-      >
-        {renderTargets.map(({ key, person, side }) => (
-          <div
-            key={key}
-            data-card-node="1"
-            style={{
-              width: `${CARD_PX.w}px`,
-              height: `${CARD_PX.h}px`,
-              display: "block",
-              background: "#ffffff",
-            }}
-          >
-            <CardPreview person={person} side={side} />
-          </div>
-        ))}
-      </div>
-
-      <div className="text-sm text-gray-600 leading-6">
-        <strong>Print spec:</strong> CR80 85.6×54.0 mm (3.370×2.125 in) at 300-DPI (1011×638 px). Cards are placed at
-        true physical size (242.64×153 pt) on A4 (595×842 pt). For duplex printing, print the two PDFs in order.
-      </div>
-    </div>
-  );
-}
+    setExporting("Rendering images…
