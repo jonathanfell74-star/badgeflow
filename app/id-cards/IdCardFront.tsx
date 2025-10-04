@@ -6,7 +6,7 @@ import {
   type IdCardThemeKey,
 } from '@/lib/idCardThemes';
 
-// CR80: 85.6mm × 54mm -> ratio ≈ 1.585 (landscape)
+// CR80 landscape ratio
 const CARD_W = 336;
 const CARD_H = Math.round(CARD_W / 1.585);
 
@@ -25,6 +25,10 @@ export default function IdCardFront({ data }: { data: CardData }) {
   const themeKey: IdCardThemeKey = data.theme ?? DEFAULT_THEME_KEY;
   const theme = ID_CARD_THEMES[themeKey];
 
+  // Tweak here if you ever want bigger/smaller logos globally
+  const LOGO_HEIGHT = 36;   // was 28
+  const LOGO_MAX_W  = 220;  // was 160
+
   return (
     <div
       data-card-side="front"
@@ -36,7 +40,7 @@ export default function IdCardFront({ data }: { data: CardData }) {
         position: 'relative',
         background: theme.bg,
         border: `1px solid ${theme.border}`,
-        boxShadow: '0 10px 24px rgba(0,0,0,0.12)',
+        boxShadow: '0 10px 24px rgba(0,0,0,0.12)`,
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
       }}
@@ -88,30 +92,33 @@ export default function IdCardFront({ data }: { data: CardData }) {
 
           {/* info */}
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            {/* bigger logo row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 28 }}>
+            {/* bigger, more flexible logo row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: LOGO_HEIGHT }}>
               {data.companyLogoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={data.companyLogoUrl}
                   alt={data.companyName ?? 'Company'}
-                  style={{ height: 28, maxWidth: 160, objectFit: 'contain' }}
+                  style={{
+                    height: LOGO_HEIGHT,
+                    maxWidth: LOGO_MAX_W,
+                    objectFit: 'contain',
+                  }}
                   onError={(e) => ((e.currentTarget.style.display = 'none'))}
                 />
               ) : (
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#6b7280' }}>
                   {data.companyName ?? 'Company'}
                 </span>
               )}
             </div>
 
-            <div style={{ marginTop: 4, fontSize: 22, fontWeight: 700, lineHeight: '26px', color: theme.text }}>
+            <div style={{ marginTop: 6, fontSize: 22, fontWeight: 700, lineHeight: '26px', color: theme.text }}>
               {data.name}
             </div>
 
             <div style={{ marginTop: 4, fontSize: 12.5, lineHeight: '20px', color: theme.subtext }}>
-              {data.title ?? 'Staff'}
-              {data.department ? ` • ${data.department}` : ''}
+              {data.title ?? 'Staff'}{data.department ? ` • ${data.department}` : ''}
             </div>
 
             <div style={{ flex: 1 }} />
