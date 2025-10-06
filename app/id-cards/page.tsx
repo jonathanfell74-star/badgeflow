@@ -1,116 +1,141 @@
 "use client";
 
 /**
- * BadgeFlow — PDF Export (TEST MODE)
- * One button → A4 Fronts PDF, A4 Backs PDF.
- * This version fixes the Blob typing error on Vercel by forcing an ArrayBuffer-backed view.
+ * BadgeFlow — ID Cards (LIVE SUPABASE) + PDF Export
+ *
+ * How it gets people:
+ * - Open /id-cards?batchId=YOUR_BATCH_ID
+ * - It reads that batch from Supabase (view/table "matches_view")
+ *   and expects columns:
+ *     - batch_id
+ *     - employee_id
+ *     - full_name
+ *     - role (optional)
+ *     - department (optional)
+ *     - photo_url (public URL or /public path)
+ *
+ * What you need in Vercel → Project → Settings → Environment Variables:
+ *   NEXT_PUBLIC_SUPABASE_URL
+ *   NEXT_PUBLIC_SUPABASE_ANON_KEY
+ *
+ * Exports:
+ *   - A4 fronts PDF
+ *   - A4 backs PDF
+ *   - ZIP of single-card PDFs (front+back per person)
  */
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import { saveAs } from "file-saver";
-import { PDFDocument } from "pdf-lib";
-import * as htmlToImage from "html-to-image";
+import IdCardPreview from "@/components/IdCardPreview"; // your existing preview component
+import {
+  Person,
+  CARD_PX,
+  CARD_PT,
+  makeA4SheetPdfs,
+  makeSinglesZip,
+  pngDataUrlFromNode,
+} from "@/lib/pdfExport";
 
-/** Demo people (just for testing) */
-const DEMO = [
-  { id: "E1234", name: "Alex Smith", role: "Engineer" },
-  { id: "E5678", name: "Jen Nguyen", role: "Supervisor" },
-  { id: "E9012", name: "Chris Taylor", role: "Analyst" },
-];
+/* ---------- Supabase client ---------- */
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase = SUPABASE_URL && SUPABASE_ANON ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 
-/** Sizing */
-const CARD_PT = { w: 242, h: 153 }; // ~CR80 at 72pt/in
-const CARD_PX = { w: 1011, h: 638 }; // 300-DPI raster
-const A4_PT = { w: 595, h: 842 };
+/* ---------- DB row → Person mapping ---------- */
+type Row = {
+  batch_id: string;
+  employee_id: string;
+  full_name: string;
+  role?: string | null;
+  department?: string | null;
+  photo_url?: string | null; // should be a reachable URL (public)
+};
 
-/** Ensure we hand Blob a view backed by a real ArrayBuffer (not SharedArrayBuffer) */
-function safePdfBlob(bytes: Uint8Array) {
-  // Create a fresh ArrayBuffer copy that’s typed as ArrayBuffer (not ArrayBufferLike)
-  const ab = new ArrayBuffer(bytes.byteLength);
-  const view = new Uint8Array(ab);
-  view.set(bytes);
-  // Passing a Uint8Array (ArrayBufferView<ArrayBuffer>) is accepted by Blob
-  return new Blob([view], { type: "application/pdf" });
+function mapRowToPerson(r: Row): Person {
+  return {
+    id: r.employee_id,
+    name: r.full_name,
+    role: r.role ?? undefined,
+    department: r.department ?? undefined,
+    photoUrl: r.photo_url ?? undefined,
+  };
 }
 
-/** Minimal inline card preview */
-function CardPreview({
-  person,
-  side,
-}: {
-  person: (typeof DEMO)[number];
-  side: "front" | "back";
-}) {
-  return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        boxSizing: "border-box",
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        padding: 18,
-        display: "grid",
-        gridTemplateColumns: side === "front" ? "1fr 1.2fr" : "1fr",
-        gridTemplateRows: "1fr",
-        gap: 12,
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
-      }}
-    >
-      {side === "front" ? (
-        <>
-          <div
-            style={{
-              borderRadius: 8,
-              overflow: "hidden",
-              background: "#f3f4f6",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "1px solid #e5e7eb",
-              fontSize: 12,
-              color: "#9ca3af",
-            }}
-          >
-            No Photo
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: 14, letterSpacing: "0.06em", color: "#9ca3af" }}>BADGEFLOW</div>
-              <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{person.name}</div>
-              <div style={{ fontSize: 14, color: "#6b7280", marginTop: 2 }}>{person.role}</div>
-            </div>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>
-              ID: <strong>{person.id}</strong>
-            </div>
-          </div>
-        </>
-      ) : (
-        <div
-          style={{
-            border: "1px dashed #e5e7eb",
-            borderRadius: 8,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 12,
-            color: "#6b7280",
-          }}
-        >
-          Back side content
-        </div>
-      )}
-    </div>
-  );
+/* ---------- Data Loader ---------- */
+function usePeopleFromBatch(): { people: Person[]; loading: boolean; source: string } {
+  const [people, setPeople] = useState<Person[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState("none");
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      setLoading(true);
+      const params = new URLSearchParams(window.location.search);
+      const batchId = params.get("batchId");
+
+      if (!batchId) {
+        if (mounted) {
+          setPeople([]);
+          setSource("missing batchId");
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (!supabase) {
+        if (mounted) {
+          setPeople([]);
+          setSource("supabase not configured");
+          setLoading(false);
+        }
+        return;
+      }
+
+      // Adjust "matches_view" and column list if your schema differs.
+      const { data, error } = await supabase
+        .from("matches_view")
+        .select("batch_id, employee_id, full_name, role, department, photo_url")
+        .eq("batch_id", batchId)
+        .order("full_name", { ascending: true });
+
+      if (error) {
+        console.error("Supabase error:", error);
+        if (mounted) {
+          setPeople([]);
+          setSource("supabase error");
+          setLoading(false);
+        }
+        return;
+      }
+
+      const mapped = (data as Row[]).map(mapRowToPerson);
+      if (mounted) {
+        setPeople(mapped);
+        setSource(`supabase: batchId=${batchId}`);
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return { people, loading, source };
 }
 
-export default function IdCardsTestPage() {
-  const [people] = useState(DEMO);
+/* ---------- Page ---------- */
+export default function IdCardsLivePage() {
+  const { people, loading, source } = usePeopleFromBatch();
   const [exporting, setExporting] = useState<string | null>(null);
+
+  // Hidden render stage for exact 300-DPI rasterization
   const exportRef = useRef<HTMLDivElement>(null);
 
-  // [p1-front, p1-back, p2-front, p2-back, ...]
+  // Render order: [p1-front, p1-back, p2-front, p2-back, ...]
   const renderTargets = useMemo(
     () =>
       people.flatMap((p) => [
@@ -120,35 +145,10 @@ export default function IdCardsTestPage() {
     [people]
   );
 
-  /** Build a simple A4 PDF from PNG data URLs */
-  async function makePdf(images: string[], label: string) {
-    const doc = await PDFDocument.create();
-    const page = doc.addPage([A4_PT.w, A4_PT.h]);
-
-    let x = 40;
-    let y = A4_PT.h - (CARD_PT.h + 40);
-
-    for (let i = 0; i < images.length; i++) {
-      const imgBytes = await fetch(images[i]).then((r) => r.arrayBuffer());
-      const img = await doc.embedPng(imgBytes);
-      page.drawImage(img, { x, y, width: CARD_PT.w, height: CARD_PT.h });
-
-      x += CARD_PT.w + 10;
-      if (x + CARD_PT.w > A4_PT.w) {
-        x = 40;
-        y -= CARD_PT.h + 10;
-      }
-    }
-
-    const bytes = await doc.save(); // Uint8Array
-    const blob = safePdfBlob(bytes);
-    saveAs(blob, `BadgeFlow_${label}.pdf`);
-  }
-
-  const handleExport = useCallback(async () => {
+  const doExport = useCallback(async () => {
     if (!exportRef.current) return;
     if (!people.length) {
-      alert("No people to export.");
+      alert("No people to export yet.");
       return;
     }
 
@@ -161,71 +161,127 @@ export default function IdCardsTestPage() {
     const fronts: string[] = [];
     const backs: string[] = [];
 
+    // nodes are [front, back, front, back, ...]
     for (let i = 0; i < nodes.length; i += 2) {
-      const frontDataUrl = (await htmlToImage.toPng(nodes[i])) as string;
-      const backDataUrl = (await htmlToImage.toPng(nodes[i + 1])) as string;
+      const frontNode = nodes[i];
+      const backNode = nodes[i + 1];
+
+      const frontDataUrl = await pngDataUrlFromNode(frontNode);
+      const backDataUrl = await pngDataUrlFromNode(backNode);
+
       fronts.push(frontDataUrl);
       backs.push(backDataUrl);
     }
 
     setExporting("Composing A4 PDFs…");
-    await makePdf(fronts, "Fronts");
-    await makePdf(backs, "Backs");
+    const { frontBlob, backBlob } = await makeA4SheetPdfs(fronts, backs);
+    saveAs(frontBlob, "badgeflow_A4_fronts.pdf");
+    saveAs(backBlob, "badgeflow_A4_backs.pdf");
+
+    setExporting("Building single-card PDFs (zip)…");
+    const zipBlob = await makeSinglesZip(fronts, backs, people);
+    saveAs(zipBlob, "badgeflow_single_cards.zip");
 
     setExporting(null);
-    alert("Export complete ✅  (A4 Fronts + A4 Backs)");
+    alert("Export complete ✅  (A4 Fronts + A4 Backs + Singles ZIP)");
   }, [people]);
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">BadgeFlow — PDF Export (TEST MODE)</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">BadgeFlow — ID Cards (LIVE)</h1>
+        <div className="text-xs text-gray-500">
+          Data source:&nbsp;<span className="font-mono">{loading ? "loading…" : source}</span>
+        </div>
+      </div>
 
       <div className="flex items-center gap-3">
         <button
-          onClick={handleExport}
-          disabled={!!exporting}
+          onClick={doExport}
+          disabled={!!exporting || loading || people.length === 0}
           className="rounded-xl px-4 py-2 bg-black text-white disabled:opacity-50"
         >
           {exporting ?? "Export PDFs"}
         </button>
-        <p className="text-sm text-gray-500">Click once — you’ll get 2 PDFs.</p>
+        <p className="text-sm text-gray-500">
+          Creates A4 sheets (fronts & backs) + a ZIP of single-card PDFs.
+        </p>
       </div>
 
-      {/* Visual check at true size */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="max-w-sm">
-          <div style={{ width: CARD_PT.w, height: CARD_PT.h, border: "1px dashed #e5e7eb", background: "#fff" }}>
-            <CardPreview person={people[0]} side="front" />
+      {/* Quick visual check — show first person front/back at true card size */}
+      {people.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="max-w-sm">
+            <div
+              style={{
+                width: CARD_PT.w,
+                height: CARD_PT.h,
+                border: "1px dashed #e5e7eb",
+                background: "#fff",
+              }}
+            >
+              <IdCardPreview person={people[0]} side="front" />
+            </div>
+            <div className="text-xs text-gray-500 mt-2">CR80 preview (front)</div>
           </div>
-          <div className="text-xs text-gray-500 mt-2">CR80 preview (front)</div>
-        </div>
-        <div className="max-w-sm">
-          <div style={{ width: CARD_PT.w, height: CARD_PT.h, border: "1px dashed #e5e7eb", background: "#fff" }}>
-            <CardPreview person={people[0]} side="back" />
+          <div className="max-w-sm">
+            <div
+              style={{
+                width: CARD_PT.w,
+                height: CARD_PT.h,
+                border: "1px dashed #e5e7eb",
+                background: "#fff",
+              }}
+            >
+              <IdCardPreview person={people[0]} side="back" />
+            </div>
+            <div className="text-xs text-gray-500 mt-2">CR80 preview (back)</div>
           </div>
-          <div className="text-xs text-gray-500 mt-2">CR80 preview (back)</div>
         </div>
-      </div>
+      )}
 
-      {/* Hidden 300-DPI render stage */}
+      {/* Helpful message if nothing loaded */}
+      {!loading && people.length === 0 && (
+        <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+          No people found. Open this page with a batch ID, e.g.&nbsp;
+          <code>/id-cards?batchId=YOUR_BATCH_ID</code>. Make sure your Supabase{" "}
+          <code>matches_view</code> returns <code>full_name</code>, <code>employee_id</code>, and{" "}
+          <code>photo_url</code>.
+        </div>
+      )}
+
+      {/* Hidden 300-DPI render stage — this is what actually gets rasterized */}
       <div
         ref={exportRef}
-        style={{ position: "absolute", left: -99999, top: 0, width: 0, height: 0, overflow: "hidden" }}
+        style={{
+          position: "absolute",
+          left: -99999,
+          top: 0,
+          width: 0,
+          height: 0,
+          overflow: "hidden",
+        }}
       >
         {renderTargets.map(({ key, person, side }) => (
           <div
             key={key}
             data-card-node="1"
-            style={{ width: `${CARD_PX.w}px`, height: `${CARD_PX.h}px`, display: "block", background: "#ffffff" }}
+            style={{
+              width: `${CARD_PX.w}px`,
+              height: `${CARD_PX.h}px`,
+              display: "block",
+              background: "#ffffff",
+            }}
           >
-            <CardPreview person={person} side={side} />
+            {/* Your IdCardPreview should fill 100% of this box and avoid outer shadows/margins */}
+            <IdCardPreview person={person} side={side} />
           </div>
         ))}
       </div>
 
       <div className="text-sm text-gray-600 leading-6">
-        <strong>Print spec:</strong> CR80 85.6×54.0 mm (3.370×2.125 in) at 300-DPI (1011×638 px). Cards are drawn at true
-        physical size (~242×153 pt) onto A4 (595×842 pt).
+        <strong>Print spec:</strong> CR80 85.6×54.0 mm (3.370×2.125 in) at 300-DPI (1011×638 px).
+        Cards are placed at true physical size (~242.64×153 pt) on A4 (595×842 pt).
       </div>
     </div>
   );
