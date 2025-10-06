@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * BadgeFlow — PDF Export (TEST MODE, fixed Blob typing)
- * One button → A4 Fronts PDF, A4 Backs PDF, Singles ZIP.
- * No Supabase needed for this test.
+ * BadgeFlow — PDF Export (TEST MODE)
+ * One button → A4 Fronts PDF, A4 Backs PDF.
+ * This version fixes the Blob typing error on Vercel by forcing an ArrayBuffer-backed view.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from "react";
@@ -11,26 +11,36 @@ import { saveAs } from "file-saver";
 import { PDFDocument } from "pdf-lib";
 import * as htmlToImage from "html-to-image";
 
-/** Three demo people to test with */
+/** Demo people (just for testing) */
 const DEMO = [
   { id: "E1234", name: "Alex Smith", role: "Engineer" },
   { id: "E5678", name: "Jen Nguyen", role: "Supervisor" },
   { id: "E9012", name: "Chris Taylor", role: "Analyst" },
 ];
 
-/** Card + page sizing */
-const CARD_PT = { w: 242, h: 153 }; // ~CR80 at 72pt/inch
-const CARD_PX = { w: 1011, h: 638 }; // 300-DPI raster size
+/** Sizing */
+const CARD_PT = { w: 242, h: 153 }; // ~CR80 at 72pt/in
+const CARD_PX = { w: 1011, h: 638 }; // 300-DPI raster
 const A4_PT = { w: 595, h: 842 };
 
-/** Helper: make a safe Blob from Uint8Array (fixes TS type complaint) */
-function blobFromUint8(bytes: Uint8Array, type: string) {
-  const slice = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  return new Blob([slice], { type });
+/** Ensure we hand Blob a view backed by a real ArrayBuffer (not SharedArrayBuffer) */
+function safePdfBlob(bytes: Uint8Array) {
+  // Create a fresh ArrayBuffer copy that’s typed as ArrayBuffer (not ArrayBufferLike)
+  const ab = new ArrayBuffer(bytes.byteLength);
+  const view = new Uint8Array(ab);
+  view.set(bytes);
+  // Passing a Uint8Array (ArrayBufferView<ArrayBuffer>) is accepted by Blob
+  return new Blob([view], { type: "application/pdf" });
 }
 
-/** Minimal inline preview for front/back */
-function CardPreview({ person, side }: { person: (typeof DEMO)[number]; side: "front" | "back" }) {
+/** Minimal inline card preview */
+function CardPreview({
+  person,
+  side,
+}: {
+  person: (typeof DEMO)[number];
+  side: "front" | "back";
+}) {
   return (
     <div
       style={{
@@ -100,7 +110,7 @@ export default function IdCardsTestPage() {
   const [exporting, setExporting] = useState<string | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
-  // Render order: [p1-front, p1-back, p2-front, p2-back, ...]
+  // [p1-front, p1-back, p2-front, p2-back, ...]
   const renderTargets = useMemo(
     () =>
       people.flatMap((p) => [
@@ -110,10 +120,11 @@ export default function IdCardsTestPage() {
     [people]
   );
 
-  /** Build a simple A4 PDF from a list of PNG data URLs */
+  /** Build a simple A4 PDF from PNG data URLs */
   async function makePdf(images: string[], label: string) {
     const doc = await PDFDocument.create();
     const page = doc.addPage([A4_PT.w, A4_PT.h]);
+
     let x = 40;
     let y = A4_PT.h - (CARD_PT.h + 40);
 
@@ -130,7 +141,7 @@ export default function IdCardsTestPage() {
     }
 
     const bytes = await doc.save(); // Uint8Array
-    const blob = blobFromUint8(bytes, "application/pdf");
+    const blob = safePdfBlob(bytes);
     saveAs(blob, `BadgeFlow_${label}.pdf`);
   }
 
@@ -175,12 +186,12 @@ export default function IdCardsTestPage() {
           disabled={!!exporting}
           className="rounded-xl px-4 py-2 bg-black text-white disabled:opacity-50"
         >
-        {exporting ?? "Export PDFs"}
+          {exporting ?? "Export PDFs"}
         </button>
         <p className="text-sm text-gray-500">Click once — you’ll get 2 PDFs.</p>
       </div>
 
-      {/* Simple on-page preview of the first card at true size (visual check) */}
+      {/* Visual check at true size */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="max-w-sm">
           <div style={{ width: CARD_PT.w, height: CARD_PT.h, border: "1px dashed #e5e7eb", background: "#fff" }}>
@@ -196,7 +207,7 @@ export default function IdCardsTestPage() {
         </div>
       </div>
 
-      {/* Hidden 300-DPI render stage — this is what gets rasterized */}
+      {/* Hidden 300-DPI render stage */}
       <div
         ref={exportRef}
         style={{ position: "absolute", left: -99999, top: 0, width: 0, height: 0, overflow: "hidden" }}
