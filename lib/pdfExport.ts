@@ -19,7 +19,7 @@ export type Person = {
 /** Physical sizing (CR80) and layout constants */
 export const INCH_TO_PT = 72;
 export const CARD_IN = { w: 3.37, h: 2.125 };
-export const CARD_PT = { w: CARD_IN.w * INCH_TO_PT, h: CARD_IN.h * INCH_TO_PT }; // 242.64 × 153.0
+export const CARD_PT = { w: CARD_IN.w * INCH_TO_PT, h: CARD_IN.h * INCH_TO_PT }; // ~242.64 × 153.0
 export const CARD_PX = { w: 1011, h: 638 }; // exact 300 DPI target
 export const A4_PT = { w: 595, h: 842 }; // 72 pt/in (portrait)
 export const GRID = { cols: 2, rows: 5 }; // 10 per page
@@ -56,10 +56,17 @@ export const POSITIONS = calculateCellPositions();
 export async function pngDataUrlFromNode(node: HTMLElement): Promise<string> {
   const htmlToImage = await import("html-to-image");
   return htmlToImage.toPng(node, {
-    pixelRatio: 1,
+    pixelRatio: 1, // node already sized to exact pixels
     cacheBust: true,
-    backgroundColor: "#ffffff"
+    backgroundColor: "#ffffff",
   });
+}
+
+/** SAFETY: create a PDF Blob from Uint8Array without SharedArrayBuffer typing issues (Vercel TS) */
+function safePdfBlob(bytes: Uint8Array): Blob {
+  const ab = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(ab).set(bytes);
+  return new Blob([new Uint8Array(ab)], { type: "application/pdf" });
 }
 
 /** Build A4 sheet PDFs (fronts-only and backs-only). Returns Blobs. */
@@ -86,7 +93,7 @@ export async function makeA4SheetPdfs(fronts: string[], backs: string[]) {
           x: 16,
           y: A4_PT.h - 16,
           size: 8,
-          font
+          font,
         });
       }
       const pngBytes = await fetch(images[i]).then((r) => r.arrayBuffer());
@@ -102,12 +109,12 @@ export async function makeA4SheetPdfs(fronts: string[], backs: string[]) {
   await addGridPages(docFront, fronts, "FRONT", fontFront);
   await addGridPages(docBack, backs, "BACK", fontBack);
 
-  const frontPdfBytes = await docFront.save();
-  const backPdfBytes = await docBack.save();
+  const frontPdfBytes = await docFront.save(); // Uint8Array
+  const backPdfBytes = await docBack.save();   // Uint8Array
 
   return {
-    frontBlob: new Blob([frontPdfBytes], { type: "application/pdf" }),
-    backBlob: new Blob([backPdfBytes], { type: "application/pdf" })
+    frontBlob: safePdfBlob(frontPdfBytes),
+    backBlob: safePdfBlob(backPdfBytes),
   };
 }
 
@@ -128,4 +135,18 @@ export async function makeSinglesZip(
       const page = doc.addPage([CARD_PT.w, CARD_PT.h]);
       const pngBytes = await fetch(dataUrl).then((r) => r.arrayBuffer());
       const embedded = await doc.embedPng(pngBytes);
-      page.drawImage(embedded, { x: 0, y: 0, width: CARD_PT.w, height: CARD_PT.h }
+      page.drawImage(embedded, { x: 0, y: 0, width: CARD_PT.w, height: CARD_PT.h });
+    };
+
+    if (fronts[i]) await addSide(fronts[i]);
+    if (backs[i]) await addSide(backs[i]);
+
+    const bytes = await doc.save();
+    const safeName = `${p.id}_${p.name.replace(/\s+/g, "_")}.pdf`;
+    zip.file(safeName, bytes);
+  }
+
+  // JSZip will produce a proper Blob here
+  const blob = await zip.generateAsync({ type: "blob" });
+  return blob;
+}
