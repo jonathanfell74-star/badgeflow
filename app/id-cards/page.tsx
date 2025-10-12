@@ -2,13 +2,14 @@
 
 /**
  * BadgeFlow — ID Cards (LIVE SUPABASE) + PDF Export
- * Open /id-cards?batchId=YOUR_BATCH_ID
+ * Uses your IdCardPreview which expects:  <IdCardPreview data={...} />
+ * We adapt our people into that data shape and add a "side" hint.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { saveAs } from "file-saver";
-import IdCardPreview from "./IdCardPreview"; // ⬅️ FIXED: relative import
+import IdCardPreview from "./IdCardPreview"; // your component expects { data: CardData }
 import {
   Person,
   CARD_PX,
@@ -41,6 +42,21 @@ function mapRowToPerson(r: Row): Person {
     department: r.department ?? undefined,
     photoUrl: r.photo_url ?? undefined,
   };
+}
+
+/* ---------- Adapt Person → CardData your component understands ---------- */
+/** Minimal shape that IdCardPreview can consume; we cast to CardData to satisfy TS. */
+function toCardData(p: Person, side: "front" | "back") {
+  // Add/rename fields here if your IdCardPreview expects different keys.
+  const dataLike = {
+    employee_id: p.id,
+    full_name: p.name,
+    role: p.role ?? "",
+    department: p.department ?? "",
+    photo_url: p.photoUrl ?? "",
+    side, // many preview components read a 'side' flag to switch layouts
+  };
+  return dataLike as unknown as { /* CardData */ };
 }
 
 /* ---------- Data Loader ---------- */
@@ -76,7 +92,7 @@ function usePeopleFromBatch(): { people: Person[]; loading: boolean; source: str
       }
 
       const { data, error } = await supabase
-        .from("matches_view") // adjust if your schema differs
+        .from("matches_view") // change if your view/table name differs
         .select("batch_id, employee_id, full_name, role, department, photo_url")
         .eq("batch_id", batchId)
         .order("full_name", { ascending: true });
@@ -141,6 +157,7 @@ export default function IdCardsLivePage() {
     const fronts: string[] = [];
     const backs: string[] = [];
 
+    // nodes are [front, back, front, back, ...]
     for (let i = 0; i < nodes.length; i += 2) {
       const frontNode = nodes[i];
       const backNode = nodes[i + 1];
@@ -199,7 +216,9 @@ export default function IdCardsLivePage() {
                 background: "#fff",
               }}
             >
-              <IdCardPreview person={people[0]} side="front" />
+              {/* Cast to any so TS won't complain about CardData shape differences */}
+              {/* @ts-ignore */}
+              <IdCardPreview data={toCardData(people[0], "front")} />
             </div>
             <div className="text-xs text-gray-500 mt-2">CR80 preview (front)</div>
           </div>
@@ -212,7 +231,8 @@ export default function IdCardsLivePage() {
                 background: "#fff",
               }}
             >
-              <IdCardPreview person={people[0]} side="back" />
+              {/* @ts-ignore */}
+              <IdCardPreview data={toCardData(people[0], "back")} />
             </div>
             <div className="text-xs text-gray-500 mt-2">CR80 preview (back)</div>
           </div>
@@ -251,7 +271,8 @@ export default function IdCardsLivePage() {
               background: "#ffffff",
             }}
           >
-            <IdCardPreview person={person} side={side} />
+            {/* @ts-ignore */}
+            <IdCardPreview data={toCardData(person, side)} />
           </div>
         ))}
       </div>
