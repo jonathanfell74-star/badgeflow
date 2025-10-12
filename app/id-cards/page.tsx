@@ -2,32 +2,13 @@
 
 /**
  * BadgeFlow — ID Cards (LIVE SUPABASE) + PDF Export
- *
- * How it gets people:
- * - Open /id-cards?batchId=YOUR_BATCH_ID
- * - It reads that batch from Supabase (view/table "matches_view")
- *   and expects columns:
- *     - batch_id
- *     - employee_id
- *     - full_name
- *     - role (optional)
- *     - department (optional)
- *     - photo_url (public URL or /public path)
- *
- * What you need in Vercel → Project → Settings → Environment Variables:
- *   NEXT_PUBLIC_SUPABASE_URL
- *   NEXT_PUBLIC_SUPABASE_ANON_KEY
- *
- * Exports:
- *   - A4 fronts PDF
- *   - A4 backs PDF
- *   - ZIP of single-card PDFs (front+back per person)
+ * Open /id-cards?batchId=YOUR_BATCH_ID
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { saveAs } from "file-saver";
-import IdCardPreview from "@/components/IdCardPreview"; // your existing preview component
+import IdCardPreview from "./IdCardPreview"; // ⬅️ FIXED: relative import
 import {
   Person,
   CARD_PX,
@@ -49,7 +30,7 @@ type Row = {
   full_name: string;
   role?: string | null;
   department?: string | null;
-  photo_url?: string | null; // should be a reachable URL (public)
+  photo_url?: string | null;
 };
 
 function mapRowToPerson(r: Row): Person {
@@ -94,9 +75,8 @@ function usePeopleFromBatch(): { people: Person[]; loading: boolean; source: str
         return;
       }
 
-      // Adjust "matches_view" and column list if your schema differs.
       const { data, error } = await supabase
-        .from("matches_view")
+        .from("matches_view") // adjust if your schema differs
         .select("batch_id, employee_id, full_name, role, department, photo_url")
         .eq("batch_id", batchId)
         .order("full_name", { ascending: true });
@@ -161,7 +141,6 @@ export default function IdCardsLivePage() {
     const fronts: string[] = [];
     const backs: string[] = [];
 
-    // nodes are [front, back, front, back, ...]
     for (let i = 0; i < nodes.length; i += 2) {
       const frontNode = nodes[i];
       const backNode = nodes[i + 1];
@@ -240,7 +219,6 @@ export default function IdCardsLivePage() {
         </div>
       )}
 
-      {/* Helpful message if nothing loaded */}
       {!loading && people.length === 0 && (
         <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
           No people found. Open this page with a batch ID, e.g.&nbsp;
@@ -273,7 +251,6 @@ export default function IdCardsLivePage() {
               background: "#ffffff",
             }}
           >
-            {/* Your IdCardPreview should fill 100% of this box and avoid outer shadows/margins */}
             <IdCardPreview person={person} side={side} />
           </div>
         ))}
