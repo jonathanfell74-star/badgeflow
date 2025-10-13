@@ -1,5 +1,5 @@
 // lib/wallet/apple.ts
-import { Pass } from "passkit-generator";
+import { PKPass } from "passkit-generator";
 import QRCode from "qrcode";
 import crypto from "node:crypto";
 
@@ -29,11 +29,11 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
   }
 
   const serial = card.wallet_serial ?? crypto.randomUUID();
-  const verifyId = serial;
-  const verifyUrl = `${baseUrl}/api/verify/${encodeURIComponent(verifyId)}`;
+  const verifyUrl = `${baseUrl}/api/verify/${encodeURIComponent(serial)}`;
   const qrPng = await QRCode.toBuffer(verifyUrl, { margin: 0, width: 480 });
 
-  const pass = await Pass.from(
+  // Build Generic pass
+  const pass = await PKPass.from(
     {
       model: {
         passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID!,
@@ -44,7 +44,7 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
         serialNumber: serial,
         generic: {
           primaryFields: [
-            { key: "name", label: "Name", value: card.full_name || "Staff" },
+            { key: "name", label: "Name", value: card.full_name || "Staff" }
           ],
           secondaryFields: [
             { key: "role", label: "Role", value: card.role || "" },
@@ -78,7 +78,7 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
     { serialNumber: serial }
   );
 
-  // Minimal image set; swap in your brand images later
+  // Minimal images (swap with brand assets later)
   const blank = await QRCode.toBuffer(" ", { margin: 0, width: 10 });
   pass.images.add("icon.png", blank);
   pass.images.add("logo.png", blank);
