@@ -1,4 +1,5 @@
-// app/api/wallet/apple/create/route.ts
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { issueApplePkpass } from "@/lib/wallet/apple";
