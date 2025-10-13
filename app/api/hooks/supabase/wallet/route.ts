@@ -1,4 +1,5 @@
-// app/api/hooks/supabase/wallet/route.ts
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { issueApplePkpass } from "@/lib/wallet/apple";
@@ -6,7 +7,6 @@ import { buildGoogleSaveUrl } from "@/lib/wallet/google";
 
 export async function POST(req: NextRequest) {
   try {
-    // Shared-secret check
     const secret = req.headers.get("x-badgeflow-secret");
     if (!secret || secret !== process.env.WEBHOOK_SECRET) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -20,12 +20,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No manual_cards id" }, { status: 400 });
     }
 
-    // Grab the card/person row
     const { data: card, error } = await supabaseAdmin
       .from("manual_cards")
-      .select(
-        "id, full_name, role, department, company_id, photo_url, wallet_serial, valid_until"
-      )
+      .select("id, full_name, role, department, company_id, photo_url, wallet_serial, valid_until")
       .eq("id", cardId)
       .single();
 
@@ -34,14 +31,10 @@ export async function POST(req: NextRequest) {
     const baseUrl = process.env.BADGEFLOW_BASE_URL!;
     const { pkpassBuffer, serial } = await issueApplePkpass(card, baseUrl);
 
-    // Store pkpass to Storage (bucket: public)
     const storagePath = `wallet/${card.id}.pkpass`;
     const upload = await supabaseAdmin.storage
       .from("public")
-      .upload(storagePath, pkpassBuffer, {
-        upsert: true,
-        contentType: "application/vnd.apple.pkpass"
-      });
+      .upload(storagePath, pkpassBuffer, { upsert: true, contentType: "application/vnd.apple.pkpass" });
     if (upload.error) throw new Error(upload.error.message);
 
     const { data: signed, error: signErr } = await supabaseAdmin.storage
