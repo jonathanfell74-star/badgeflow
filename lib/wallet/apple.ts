@@ -2,6 +2,7 @@
 import { PKPass } from "passkit-generator";
 import QRCode from "qrcode";
 import crypto from "node:crypto";
+import path from "node:path";
 
 export type ManualCard = {
   id: string;
@@ -32,58 +33,6 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
   const verifyUrl = `${baseUrl}/api/verify/${encodeURIComponent(serial)}`;
   const qrPng = await QRCode.toBuffer(verifyUrl, { margin: 0, width: 480 });
 
-  // Build Generic pass
-  const pass = await PKPass.from(
-    {
-      model: {
-        passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID!,
-        teamIdentifier: process.env.APPLE_TEAM_ID!,
-        formatVersion: 1,
-        organizationName: "BadgeFlow",
-        description: "Staff ID",
-        serialNumber: serial,
-        generic: {
-          primaryFields: [
-            { key: "name", label: "Name", value: card.full_name || "Staff" }
-          ],
-          secondaryFields: [
-            { key: "role", label: "Role", value: card.role || "" },
-            { key: "dept", label: "Dept", value: card.department || "" }
-          ],
-          auxiliaryFields: [
-            { key: "verify", label: "Verify", value: "Scan QR" }
-          ],
-          backFields: [
-            {
-              key: "instructions",
-              label: "Verification",
-              value: "Scan the QR or present to security."
-            }
-          ]
-        },
-        barcode: {
-          format: "PKBarcodeFormatQR",
-          message: verifyUrl,
-          messageEncoding: "iso-8859-1",
-          altText: "Verify"
-        },
-        semantics: {}
-      },
-      certificates: {
-        signerCert: signerCert.toString("utf8"),
-        signerKey: { keyFile: signerKey.toString("utf8"), passphrase: signerKeyPass },
-        wwdr: wwdrCert.toString("utf8")
-      }
-    },
-    { serialNumber: serial }
-  );
+  const modelPath = path.resolve(process.cwd(), "wallet/apple/model");
 
-  // Minimal images (swap with brand assets later)
-  const blank = await QRCode.toBuffer(" ", { margin: 0, width: 10 });
-  pass.images.add("icon.png", blank);
-  pass.images.add("logo.png", blank);
-  pass.images.add("background.png", qrPng);
-
-  const pkpassBuffer = await pass.asBuffer();
-  return { pkpassBuffer, serial, verifyUrl };
-}
+  // Build the pass using a model folder +
