@@ -1,4 +1,5 @@
-// app/api/wallet/google/jwt/route.ts
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { buildGoogleSaveUrl } from "@/lib/wallet/google";
