@@ -24,7 +24,6 @@
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",
-    "@types/jsbarcode": "^3.11.8",
     "@types/jszip": "^3.4.1",
     "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "20.11.30",
