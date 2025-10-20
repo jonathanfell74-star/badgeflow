@@ -44,9 +44,11 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
     {
       model: modelPath,
       certificates: {
-        signerCert: signerCert.toString("utf8"),
-        signerKey: { keyFile: signerKey.toString("utf8"), passphrase: signerKeyPass },
+        // passkit-generator expects PEM strings (or Buffers) directly
         wwdr: wwdrCert.toString("utf8"),
+        signerCert: signerCert.toString("utf8"),
+        signerKey: signerKey.toString("utf8"),
+        signerKeyPassphrase: signerKeyPass,
       },
     },
     {
@@ -85,13 +87,11 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
   );
 
   // --- Images (we add at build time so model images can be minimal) ---
-  // Apple requires icon/logo; we'll add simple placeholders + QR background.
   const tiny = await QRCode.toBuffer(" ", { margin: 0, width: 10 });
   pass.images.add("icon.png", tiny);
   pass.images.add("logo.png", tiny);
   pass.images.add("background.png", qrPng);
 
-  // --- Final .pkpass buffer ---
   const pkpassBuffer = await pass.asBuffer();
   return { pkpassBuffer, serial, verifyUrl };
 }
