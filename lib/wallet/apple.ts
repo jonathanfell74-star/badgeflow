@@ -97,6 +97,8 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
     p.images.add("background.png", qrPng);
   }
 
-  const pkpassBuffer = await pass.asBuffer();
+  // --- Buffer output (type defs don't expose .asBuffer; cast to any) ---
+  const pkpassBuffer: Buffer = await (p.asBuffer as () => Promise<Buffer>)();
+
   return { pkpassBuffer, serial, verifyUrl };
 }
