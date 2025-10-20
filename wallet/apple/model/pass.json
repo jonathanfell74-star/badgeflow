@@ -1,20 +1,9 @@
 {
   "formatVersion": 1,
-  "passTypeIdentifier": "REPLACE_IN_RUNTIME",
-  "teamIdentifier": "REPLACE_IN_RUNTIME",
+  "description": "BadgeFlow Staff ID",
   "organizationName": "BadgeFlow",
-  "description": "Staff ID",
-  "serialNumber": "REPLACED_IN_RUNTIME",
-  "barcodes": [],
-  "barcode": {
-    "format": "PKBarcodeFormatQR",
-    "message": "REPLACED_IN_RUNTIME",
-    "messageEncoding": "iso-8859-1"
-  },
-  "generic": {
-    "primaryFields": [],
-    "secondaryFields": [],
-    "auxiliaryFields": [],
-    "backFields": []
-  }
+  "passTypeIdentifier": "REPLACED_AT_BUILD",
+  "teamIdentifier": "REPLACED_AT_BUILD",
+  "serialNumber": "REPLACED_AT_BUILD",
+  "generic": {}
 }
