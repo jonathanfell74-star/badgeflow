@@ -7,14 +7,46 @@ import { buildGoogleSaveUrl } from "@/lib/wallet/google";
 
 const BATCH_SIZE = 10;
 
+/** Read secret from either:
+ *   - x-cron-secret: <secret>
+ *   - authorization: Bearer <secret>
+ */
+function getIncomingSecret(req: NextRequest) {
+  const h1 = req.headers.get("x-cron-secret")?.trim();
+  const h2 = req.headers.get("authorization")?.trim();
+  if (h1) return h1;
+  if (h2?.toLowerCase().startsWith("bearer ")) return h2.slice(7).trim();
+  return null;
+}
+
 export async function GET(req: NextRequest) {
-  // simple auth for cron
-  const secret = req.headers.get("x-cron-secret");
-  if (!secret || secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const incoming = getIncomingSecret(req);
+  const expected = process.env.CRON_SECRET;
+
+  if (!expected) {
+    // Helpful error if env var wasn't loaded into this deployment
+    return NextResponse.json(
+      { error: "CRON_SECRET env var is not set in this deployment." },
+      { status: 500 }
+    );
+  }
+  if (!incoming) {
+    return NextResponse.json(
+      {
+        error:
+          "Missing secret. Send header 'x-cron-secret: <value>' or 'Authorization: Bearer <value>'.",
+      },
+      { status: 401 }
+    );
+  }
+  if (incoming !== expected) {
+    return NextResponse.json(
+      { error: "Unauthorized (secret mismatch)." },
+      { status: 401 }
+    );
   }
 
-  // 1) Fetch a small batch of pending jobs
+  // -------- processor --------
   const { data: jobs, error: jobsErr } = await supabaseAdmin
     .from("wallet_jobs")
     .select("*")
@@ -25,14 +57,13 @@ export async function GET(req: NextRequest) {
   if (jobsErr) {
     return NextResponse.json({ error: jobsErr.message }, { status: 500 });
   }
-  if (!jobs || jobs.length === 0) {
+  if (!jobs?.length) {
     return NextResponse.json({ ok: true, processed: 0 });
   }
 
   let processed = 0;
   for (const job of jobs) {
     try {
-      // 2) Load the manual_cards row
       const { data: card, error: cardErr } = await supabaseAdmin
         .from("manual_cards")
         .select(
@@ -41,14 +72,11 @@ export async function GET(req: NextRequest) {
         .eq("id", job.card_id)
         .single();
 
-      if (cardErr || !card) {
-        throw new Error(cardErr?.message || "manual_cards row not found");
-      }
+      if (cardErr || !card) throw new Error(cardErr?.message || "Row not found");
 
       const baseUrl = process.env.BADGEFLOW_BASE_URL!;
       const { pkpassBuffer, serial } = await issueApplePkpass(card, baseUrl);
 
-      // 3) Upload Apple pkpass to Storage
       const storagePath = `wallet/${card.id}.pkpass`;
       const upload = await supabaseAdmin.storage
         .from("public")
@@ -60,17 +88,15 @@ export async function GET(req: NextRequest) {
 
       const { data: signed, error: signErr } = await supabaseAdmin.storage
         .from("public")
-        .createSignedUrl(storagePath, 60 * 60 * 24 * 30); // 30 days
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 30);
       if (signErr) throw new Error(signErr.message);
-      const appleUrl = signed?.signedUrl || null;
 
-      // 4) Google Save URL
+      const appleUrl = signed?.signedUrl ?? null;
       const { saveUrl } = buildGoogleSaveUrl(
         { ...card, wallet_serial: serial },
         baseUrl
       );
 
-      // 5) Update manual_cards row with links + serial
       const { error: upErr } = await supabaseAdmin
         .from("manual_cards")
         .update({
@@ -82,22 +108,20 @@ export async function GET(req: NextRequest) {
         .eq("id", card.id);
       if (upErr) throw new Error(upErr.message);
 
-      // 6) Mark job done
       await supabaseAdmin
         .from("wallet_jobs")
-        .update({ status: "done", attempts: job.attempts + 1, last_error: null })
+        .update({ status: "done", attempts: (job.attempts || 0) + 1, last_error: null })
         .eq("id", job.id);
 
       processed++;
     } catch (e: any) {
-      // Mark job as error (up to 3 attempts, then stop retrying)
       const attempts = (job.attempts || 0) + 1;
       await supabaseAdmin
         .from("wallet_jobs")
         .update({
           status: attempts >= 3 ? "error" : "pending",
           attempts,
-          last_error: e?.message?.slice(0, 500) || "unknown",
+          last_error: (e?.message || "unknown").slice(0, 500),
         })
         .eq("id", job.id);
     }
