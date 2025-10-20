@@ -41,15 +41,13 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
   // --- Path to model folder (must contain pass.json) ---
   const modelPath = path.resolve(process.cwd(), "wallet/apple/model");
 
-  // Build overrides separately, then cast to any to satisfy type checker.
+  // Build overrides separately (cast to any to quiet types)
   const overrides: any = {
     passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID!,
     teamIdentifier: process.env.APPLE_TEAM_ID!,
     serialNumber: serial,
     description: "Staff ID",
     organizationName: "BadgeFlow",
-
-    // Apple allows either `barcode` (single) or `barcodes` (array)
     barcodes: [
       {
         format: "PKBarcodeFormatQR",
@@ -58,8 +56,6 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
         altText: "Verify",
       },
     ],
-
-    // Generic pass fields
     generic: {
       primaryFields: [
         { key: "name", label: "Name", value: card.full_name || "Staff" },
@@ -89,14 +85,17 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
         signerKeyPassphrase: signerKeyPass,
       },
     },
-    overrides as any // <-- silence TS; schema is valid for Apple passes
+    overrides as any
   );
 
-  // Required images: icon/logo. We add tiny placeholders + QR background.
+  // --- Images (type defs don't expose .images; cast to any) ---
   const tiny = await QRCode.toBuffer(" ", { margin: 0, width: 10 });
-  pass.images.add("icon.png", tiny);
-  pass.images.add("logo.png", tiny);
-  pass.images.add("background.png", qrPng);
+  const p: any = pass;
+  if (p?.images?.add) {
+    p.images.add("icon.png", tiny);
+    p.images.add("logo.png", tiny);
+    p.images.add("background.png", qrPng);
+  }
 
   const pkpassBuffer = await pass.asBuffer();
   return { pkpassBuffer, serial, verifyUrl };
