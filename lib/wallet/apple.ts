@@ -1,4 +1,6 @@
 // lib/wallet/apple.ts
+export const runtime = "nodejs";
+
 import { PKPass } from "passkit-generator";
 import QRCode from "qrcode";
 import crypto from "node:crypto";
@@ -20,7 +22,7 @@ function b64ToBuffer(b64?: string) {
 }
 
 export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
-  // --- Certificates (from env) ---
+  // --- Certificates from env (PEM strings in base64) ---
   const signerCert = b64ToBuffer(process.env.APPLE_SIGNER_CERT_PEM_B64);
   const signerKey = b64ToBuffer(process.env.APPLE_SIGNER_KEY_PEM_B64);
   const signerKeyPass = process.env.APPLE_SIGNER_KEY_PASSWORD || undefined;
@@ -33,60 +35,64 @@ export async function issueApplePkpass(card: ManualCard, baseUrl: string) {
   const serial = card.wallet_serial ?? crypto.randomUUID();
   const verifyUrl = `${baseUrl}/api/verify/${encodeURIComponent(serial)}`;
 
-  // --- Generate a QR we’ll use as background (nice touch) ---
+  // --- Background QR (nice visual and quick test) ---
   const qrPng = await QRCode.toBuffer(verifyUrl, { margin: 0, width: 480 });
 
-  // --- Path to your model folder (must exist with a pass.json) ---
+  // --- Path to model folder (must contain pass.json) ---
   const modelPath = path.resolve(process.cwd(), "wallet/apple/model");
 
-  // --- Build the pass using model + override fields here ---
+  // Build overrides separately, then cast to any to satisfy type checker.
+  const overrides: any = {
+    passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID!,
+    teamIdentifier: process.env.APPLE_TEAM_ID!,
+    serialNumber: serial,
+    description: "Staff ID",
+    organizationName: "BadgeFlow",
+
+    // Apple allows either `barcode` (single) or `barcodes` (array)
+    barcodes: [
+      {
+        format: "PKBarcodeFormatQR",
+        message: verifyUrl,
+        messageEncoding: "iso-8859-1",
+        altText: "Verify",
+      },
+    ],
+
+    // Generic pass fields
+    generic: {
+      primaryFields: [
+        { key: "name", label: "Name", value: card.full_name || "Staff" },
+      ],
+      secondaryFields: [
+        { key: "role", label: "Role", value: card.role || "" },
+        { key: "dept", label: "Dept", value: card.department || "" },
+      ],
+      auxiliaryFields: [{ key: "verify", label: "Verify", value: "Scan QR" }],
+      backFields: [
+        {
+          key: "instructions",
+          label: "Verification",
+          value: "Scan the QR or present to security.",
+        },
+      ],
+    },
+  };
+
   const pass = await PKPass.from(
     {
       model: modelPath,
       certificates: {
-        // passkit-generator expects PEM strings (or Buffers) directly
         wwdr: wwdrCert.toString("utf8"),
         signerCert: signerCert.toString("utf8"),
         signerKey: signerKey.toString("utf8"),
         signerKeyPassphrase: signerKeyPass,
       },
     },
-    {
-      // Overrides merge onto pass.json in the model folder
-      passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID!,
-      teamIdentifier: process.env.APPLE_TEAM_ID!,
-      serialNumber: serial,
-      description: "Staff ID",
-      organizationName: "BadgeFlow",
-      generic: {
-        primaryFields: [
-          { key: "name", label: "Name", value: card.full_name || "Staff" },
-        ],
-        secondaryFields: [
-          { key: "role", label: "Role", value: card.role || "" },
-          { key: "dept", label: "Dept", value: card.department || "" },
-        ],
-        auxiliaryFields: [{ key: "verify", label: "Verify", value: "Scan QR" }],
-        backFields: [
-          {
-            key: "instructions",
-            label: "Verification",
-            value: "Scan the QR or present to security.",
-          },
-        ],
-      },
-      barcodes: [
-        {
-          format: "PKBarcodeFormatQR",
-          message: verifyUrl,
-          messageEncoding: "iso-8859-1",
-          altText: "Verify",
-        },
-      ],
-    }
+    overrides as any // <-- silence TS; schema is valid for Apple passes
   );
 
-  // --- Images (we add at build time so model images can be minimal) ---
+  // Required images: icon/logo. We add tiny placeholders + QR background.
   const tiny = await QRCode.toBuffer(" ", { margin: 0, width: 10 });
   pass.images.add("icon.png", tiny);
   pass.images.add("logo.png", tiny);
